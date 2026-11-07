@@ -255,6 +255,29 @@ test('并发 pollNow 只跑一轮', async (t) => {
   }
 });
 
+test('detach 后在途轮询不再 emit 或写统计', async (t) => {
+  const dir = tempDir(t);
+  const transport = new FakeTransport(async (request) => {
+    if (request.endpoint === 'user') {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return { status: 200, headers: {}, body: '{"login":"alice"}' };
+    }
+    return { status: 200, headers: {}, body: '{"total_count":0,"items":[]}' };
+  });
+  const runtime = runtimeOf(dir, transport);
+  const fake = fakeService(['github-source']);
+  try {
+    runtime.attach(fake.service);
+    const pending = runtime.pollNow();
+    runtime.detach();
+    await pending;
+    assert.equal(fake.drafts.length, 0);
+    assert.equal(runtime.status().stats.polls, 0);
+  } finally {
+    runtime.detach();
+  }
+});
+
 test('dryRun 不推进 mention 游标与 ETag', async (t) => {
   const dir = tempDir(t);
   const transport = new FakeTransport((request): GhResponse => {
@@ -380,6 +403,89 @@ test('缺少 notifications scope 时自动降级 search', async (t) => {
     assert.equal(runtime.status().config.effectiveMentionMode, 'search');
     assert.equal(transport.calls.some((call) => call.endpoint === 'notifications'), false);
     assert.ok(transport.calls.some((call) => String(call.params?.q).startsWith('mentions:@me')));
+  } finally {
+    runtime.detach();
+  }
+});
+
+test('401 后自动轮询会重新探测登录并恢复', async (t) => {
+  const dir = tempDir(t);
+  let expired = true;
+  const transport = new FakeTransport((request) => {
+    if (request.endpoint === 'user') {
+      if (expired) throw new GhError('unauthenticated', 'Bad credentials', 401);
+      return { status: 200, headers: {}, body: '{"login":"alice"}' };
+    }
+    if (request.endpoint === 'search/issues') {
+      return { status: 200, headers: {}, body: '{"total_count":0,"items":[]}' };
+    }
+    if (request.endpoint === 'notifications') return { status: 200, headers: {}, body: '[]' };
+    throw new Error(`unexpected ${request.endpoint}`);
+  });
+  const runtime = runtimeOf(dir, transport);
+  const fake = fakeService(['github-source']);
+  try {
+    runtime.attach(fake.service);
+    await runtime.pollNow();
+    assert.equal(runtime.status().login.api, 'expired');
+    assert.equal(runtime.status().stats.polls, 0);
+
+    expired = false;
+    await runtime.pollNow();
+    assert.equal(runtime.status().login.api, 'ok');
+    assert.equal(runtime.status().stats.polls, 1);
+  } finally {
+    runtime.detach();
+  }
+});
+
+test('无关流失败不阻止 mention 复用 ETag', async (t) => {
+  const dir = tempDir(t);
+  const transport = new FakeTransport((request): GhResponse => {
+    if (request.endpoint === 'search/issues') throw new GhError('network', 'network down');
+    if (request.endpoint === 'notifications') {
+      return {
+        status: 200,
+        headers: { etag: 'W/"v1"' },
+        body: JSON.stringify([{
+          id: '1',
+          reason: 'mention',
+          updated_at: '2026-11-07T09:00:00Z',
+          subject: {
+            title: '讨论',
+            url: 'https://api.github.com/repos/o/r/issues/5',
+            latest_comment_url: 'https://api.github.com/repos/o/r/issues/comments/99',
+            type: 'Issue',
+          },
+          repository: { full_name: 'o/r' },
+        }]),
+      };
+    }
+    if (request.endpoint === 'repos/o/r/issues/comments/99') {
+      return {
+        status: 200,
+        headers: {},
+        body: JSON.stringify({
+          id: 99,
+          body: '请 @alice 看一下',
+          user: { login: 'bob' },
+          html_url: 'https://github.com/o/r/issues/5#issuecomment-99',
+          updated_at: '2026-11-07T09:00:00Z',
+        }),
+      };
+    }
+    if (request.endpoint === 'user') return { status: 200, headers: {}, body: '{"login":"alice"}' };
+    throw new Error(`unexpected ${request.endpoint}`);
+  });
+  const runtime = runtimeOf(dir, transport);
+  const fake = fakeService(['github-source']);
+  try {
+    runtime.attach(fake.service);
+    await runtime.pollNow();
+    await runtime.pollNow();
+    const calls = transport.calls.filter((call) => call.endpoint === 'notifications');
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1]?.headers?.['If-None-Match'], 'W/"v1"');
   } finally {
     runtime.detach();
   }

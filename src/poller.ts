@@ -69,6 +69,8 @@ export interface PollDeps {
   seen: SeenLike;
   now?: () => number;
   cache?: PullCache;
+  /** detach 后返回 false，让在途轮询尽快停下。 */
+  isActive?: () => boolean;
 }
 
 export interface StreamSummary {
@@ -139,6 +141,7 @@ async function processCandidates<T>(
   flags: { sourceDisabled: boolean },
 ): Promise<void> {
   for (const candidate of candidates) {
+    if (deps.isActive !== undefined && !deps.isActive()) return;
     let draft: SignalDraft;
     try {
       draft = toDraft(candidate);
@@ -206,6 +209,7 @@ function aggregate(summary: PollSummary): void {
 }
 
 async function runReview(deps: PollDeps, now: number, summary: PollSummary, seen: Set<string>, flags: { sourceDisabled: boolean }): Promise<void> {
+  if (deps.isActive !== undefined && !deps.isActive()) return;
   const sinceMs = deps.config.windowMs > 0 ? now - deps.config.windowMs : 0;
   let result;
   try {
@@ -226,6 +230,7 @@ async function runReview(deps: PollDeps, now: number, summary: PollSummary, seen
 }
 
 async function runIssues(deps: PollDeps, now: number, summary: PollSummary, seen: Set<string>, flags: { sourceDisabled: boolean }): Promise<void> {
+  if (deps.isActive !== undefined && !deps.isActive()) return;
   const repos = deps.config.repos.slice(0, deps.config.maxRepos);
   if (repos.length === 0) return;
   const sinceMs = deps.config.windowMs > 0 ? now - deps.config.windowMs : 0;
@@ -249,6 +254,7 @@ async function runIssues(deps: PollDeps, now: number, summary: PollSummary, seen
 
 async function runMention(deps: PollDeps, now: number, summary: PollSummary, seen: Set<string>, flags: { sourceDisabled: boolean }): Promise<void> {
   if (deps.config.mentionMode === 'off') return;
+  if (deps.isActive !== undefined && !deps.isActive()) return;
   const windowSince = deps.config.windowMs > 0 ? now - deps.config.windowMs : 0;
   const sinceMs = Math.max(windowSince, (deps.config.mentionSinceMs ?? 0) - MENTION_OVERLAP_MS);
   let result: MentionResult;
