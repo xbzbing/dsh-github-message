@@ -84,6 +84,17 @@ test('runner 把非零退出转成 GhError，缺失命令转成 not-installed', 
   );
 });
 
+test('runner 把非零退出的 304 当作条件响应返回', async () => {
+  const runner = createRunner(process.execPath);
+  const stdout = await runner.run([
+    '-e',
+    `process.stdout.write('HTTP/2.0 304 Not Modified\\r\\nEtag: "v1"\\r\\n\\r\\n'); process.exit(1)`,
+  ], 5_000);
+  const response = parseGhResponse(stdout);
+  assert.equal(response.status, 304);
+  assert.equal(response.headers.etag, '"v1"');
+});
+
 test('runner 输出超限时拒绝而不是静默截断', async () => {
   const runner = createRunner(process.execPath);
   await assert.rejects(

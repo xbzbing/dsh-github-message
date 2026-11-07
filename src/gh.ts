@@ -219,6 +219,11 @@ export function createRunner(cliPath: string, options: RunnerOptions = {}): Comm
             resolve(stdout);
             return;
           }
+          // gh 对 304 也返回非零退出码，但 stdout 仍是完整的 HTTP 响应；交给上层按条件请求处理。
+          if (/^HTTP\/[\d.]+\s+304\b/.test(stdout)) {
+            resolve(stdout);
+            return;
+          }
           reject(classifyGhFailure(stderr || stdout, code));
         });
       });
