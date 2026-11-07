@@ -93,7 +93,8 @@ export function apiPathFromUrl(value: unknown): string | undefined {
   }
   if (url.protocol !== 'https:' || url.hostname !== API_HOST) return undefined;
   const path = url.pathname.replace(/^\/+/, '');
-  if (!/^repos\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\//.test(path)) return undefined;
+  // 只接受通知里可能出现的评论 URL，避免把任意 repos 路径交给 gh。
+  if (!/^repos\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/(?:issues|pulls)\/comments\/\d+$/.test(path)) return undefined;
   if (path.includes('..')) return undefined;
   return path;
 }
@@ -428,18 +429,21 @@ async function candidateFromSearch(
   let commentUrl: string | undefined;
 
   if (excerpt === undefined) {
+    const maxCommentPages = Math.min(options.maxPages, 5);
     try {
-      const response = await client.api({
-        endpoint: `repos/${repo}/issues/${number}/comments`,
-        params: { per_page: 100 },
-      }, options.timeoutMs);
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(response.body) as unknown;
-      } catch {
-        throw new GhError('invalid-output', '评论列表不是合法 JSON');
-      }
-      if (Array.isArray(parsed)) {
+      for (let page = 1; page <= maxCommentPages; page += 1) {
+        const response = await client.api({
+          endpoint: `repos/${repo}/issues/${number}/comments`,
+          params: { per_page: 100, page },
+        }, options.timeoutMs);
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(response.body) as unknown;
+        } catch {
+          throw new GhError('invalid-output', '评论列表不是合法 JSON');
+        }
+        if (!Array.isArray(parsed)) break;
+        // 按时间升序返回；保留最后一个命中，就是最新的 @。
         for (const item of parsed) {
           const comment = parseComment(item);
           if (comment === undefined) continue;
@@ -451,14 +455,15 @@ async function candidateFromSearch(
           commentAuthor = comment.author;
           commentUrl = comment.url;
         }
+        if (parsed.length < 100) break;
       }
     } catch (error) {
       if (error instanceof GhError && error.kind === 'not-found') {
-        result.filtered += 1;
+        if (excerpt === undefined) result.filtered += 1;
         return undefined;
       }
       note(result, error);
-      return undefined;
+      if (excerpt === undefined) return undefined;
     }
   }
   if (excerpt === undefined) {

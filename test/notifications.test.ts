@@ -198,11 +198,40 @@ test('search 降级：正文命中 @ 直接产出，评论命中读取评论列�
   assert.equal(commentHit.calls[1]?.endpoint, 'repos/xbzbing/dsh-my-superagent/issues/11/comments');
 });
 
-test('apiPathFromUrl 只接受 api.github.com 的 repos 路径', () => {
+test('search 降级会翻页找评论，保留最新命中', async () => {
+  const firstPage = Array.from({ length: 100 }, (_, index) => comment({
+    id: 200 + index,
+    body: `第 ${index} 条，没有提到谁`,
+    updated_at: '2026-11-07T08:00:00Z',
+  }));
+  const secondPage = [comment({ id: 999, body: '最新一条 @alice 请看', updated_at: '2026-11-07T09:00:00Z' })];
+  const gh = new FakeGh((request) => {
+    if (request.endpoint === 'search/issues') {
+      return searchPage([issueSearchItem({ number: 11, title: '评论提到我', body: '正文没有提到任何人' })]);
+    }
+    if (request.endpoint === 'repos/xbzbing/dsh-my-superagent/issues/11/comments') {
+      return jsonResponse(request.params?.page === 2 ? secondPage : firstPage);
+    }
+    throw new Error(`unexpected ${request.endpoint}`);
+  });
+  const result = await fetchMentionSearch(gh, OPTIONS);
+  assert.equal(result.candidates.length, 1);
+  assert.equal(result.candidates[0]?.commentId, '999');
+  assert.ok(result.candidates[0]?.excerpt.includes('@alice'));
+  assert.equal(gh.calls.filter((call) => call.endpoint.endsWith('/comments')).length, 2);
+});
+
+test('apiPathFromUrl 只接受 api.github.com 的评论路径', () => {
   assert.equal(
     apiPathFromUrl('https://api.github.com/repos/o/r/issues/comments/1'),
     'repos/o/r/issues/comments/1',
   );
+  assert.equal(
+    apiPathFromUrl('https://api.github.com/repos/o/r/pulls/comments/2'),
+    'repos/o/r/pulls/comments/2',
+  );
+  assert.equal(apiPathFromUrl('https://api.github.com/repos/o/r/issues/1'), undefined);
+  assert.equal(apiPathFromUrl('https://api.github.com/repos/o/r/actions/runs/1'), undefined);
   assert.equal(apiPathFromUrl('https://evil.example/repos/o/r/issues/1'), undefined);
   assert.equal(apiPathFromUrl('http://api.github.com/repos/o/r/issues/1'), undefined);
   assert.equal(apiPathFromUrl('https://api.github.com/user'), undefined);
