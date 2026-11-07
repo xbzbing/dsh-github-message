@@ -139,7 +139,14 @@ async function processCandidates<T>(
   flags: { sourceDisabled: boolean },
 ): Promise<void> {
   for (const candidate of candidates) {
-    const draft = toDraft(candidate);
+    let draft: SignalDraft;
+    try {
+      draft = toDraft(candidate);
+    } catch (error) {
+      stream.skipped += 1;
+      addError(stream, `翻译候选失败：${errorText(error)}`);
+      continue;
+    }
     const id = draft.sourceEventId;
     if (seenThisPoll.has(id) || deps.seen.has(id, now)) {
       stream.duplicates += 1;

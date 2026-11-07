@@ -229,6 +229,32 @@ test('轮询成功后更新统计与登录态，来源关闭时进入 waiting', 
   }
 });
 
+test('并发 pollNow 只跑一轮', async (t) => {
+  const dir = tempDir(t);
+  const transport = new FakeTransport((request) => {
+    if (request.endpoint === 'user') {
+      return new Promise((resolve) => {
+        setTimeout(() => resolve({ status: 200, headers: {}, body: '{"login":"alice"}' }), 20);
+      });
+    }
+    if (request.endpoint === 'search/issues') {
+      return { status: 200, headers: {}, body: '{"total_count":0,"items":[]}' };
+    }
+    if (request.endpoint === 'notifications') return { status: 200, headers: {}, body: '[]' };
+    throw new Error(`unexpected ${request.endpoint}`);
+  });
+  const runtime = runtimeOf(dir, transport);
+  const fake = fakeService(['github-source']);
+  try {
+    runtime.attach(fake.service);
+    await Promise.all([runtime.pollNow(), runtime.pollNow()]);
+    assert.equal(runtime.status().stats.polls, 1);
+    assert.equal(transport.calls.filter((call) => call.endpoint === 'notifications').length, 1);
+  } finally {
+    runtime.detach();
+  }
+});
+
 test('dryRun 不推进 mention 游标与 ETag', async (t) => {
   const dir = tempDir(t);
   const transport = new FakeTransport((request): GhResponse => {

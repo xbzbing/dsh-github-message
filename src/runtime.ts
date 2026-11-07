@@ -258,23 +258,18 @@ export class GithubMessageRuntime {
 
   async pollNow(force = false): Promise<void> {
     if (this.running || !this.started || this.handle === undefined) return;
-    // 401 后暂停自动轮询；面板的“立即检查”可以强制再探一次。
-    if (!force && this.login.api === 'expired') {
-      this.schedule();
-      return;
-    }
-    // 第一轮前先探一次登录：mention 摘要需要当前账号名，面板也能立即显示状态。
-    if (!this.loginProbed) {
-      this.loginProbed = true;
-      this.login = await probeLogin(this.client, this.config.timeoutMs);
-      if (!force && this.login.api === 'expired') {
-        this.schedule();
-        return;
-      }
-    }
-
+    // 先占住 running 再探测登录，避免 attach 的首轮与面板“立即检查”并发。
     this.running = true;
     try {
+      // 401 后暂停自动轮询；面板的“立即检查”可以强制再探一次。
+      if (!force && this.login.api === 'expired') return;
+      // 第一轮前先探一次登录：mention 摘要需要当前账号名，面板也能立即显示状态。
+      if (!this.loginProbed) {
+        this.loginProbed = true;
+        this.login = await probeLogin(this.client, this.config.timeoutMs);
+        if (!this.started || this.handle === undefined) return;
+        if (!force && this.login.api === 'expired') return;
+      }
       const summary = await pollOnce({
         client: this.client,
         handle: this.handle,
