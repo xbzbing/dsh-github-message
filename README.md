@@ -59,17 +59,28 @@ dsh plugin --profile web add file:/Users/ankh/workspace/private/dsh-plugins/dsh-
 
 ## 面板
 
-client 半注册在 `settings.section` 和 `plugins.bundle.config` 两个槽位，文案跟随 DSH 语言设置：
+client 半注册在 `settings.section`、`plugins.bundle.config` 和 `shell.overlay` 三个槽位，文案跟随 DSH 语言设置。
+四张卡片都可点标题折叠（默认收起「运行统计」），刷新后恢复默认。
 
 - **GitHub 登录**：账号、token 来源、scopes、通知权限、API 探测结果；点「检查登录」立即重查。
 - **核心能力**：核心是否声明 `github-source`。当前核心 P1 已支持；旧版本缺失时提示升级并进入 dry-run。
+  完全没有超级助理时显示「未接入超级助理」，并说明消息改走右下角提示。
 - **维护仓库**：每行一个 `owner/repo`，保存后立即生效；issue 流只提醒这些仓库。
 - **检查周期**：当前周期、下一轮时间、失败退避；按分钟修改并保存。
 - **运行统计**：卡片头放「立即检查 / 重置统计」；内部分三段——三路上报明细、
   最近轮询与核心信号并排、轮询历史（最近 5 轮），段间用分隔线区分。
 - **核心信号**：只读 `$DSH_HOME/dsh-my-superagent/state.sqlite`，按 kind/state 统计
   `source='github-message'` 的信号；读不到时降级提示。
-- **操作**：立即检查、重置统计。
+- **右下角提示**：`shell.overlay` 上的独立浮层，不依赖设置页是否打开。只在**未接入核心**
+  （完全没有 `mySuperagent`，或核心缺 `github-source`）时出现，已接入则完全静默。
+
+### 右下角提示
+
+- 采集到新事实时弹一张卡片：类型、标题、`owner/repo #编号`、时间；标题可点开 GitHub。
+- 最多同时显示 4 张，12 秒自动消失，可手动关闭；悬停不暂停（保持实现简单）。
+- 只提示一次：记录写在 `notified.json`，**不写 `seen`**，所以接入核心后同一事实仍会重新上报。
+- 首次连接只取游标，不把历史积压一次弹出来；页面刷新后不会重放旧提示。
+- 已接入核心时客户端降频到 30 秒轮询一次，只等状态变化。
 
 面板保存的周期与仓库列表写入 `$DSH_HOME/dsh-github-message/config.json`，**优先于**
 Cordis patch 里的 `intervalMs` / `repos`。要恢复 patch 默认值，删除这个文件后重新加载插件。
@@ -94,7 +105,8 @@ Cordis patch 里的 `intervalMs` / `repos`。要恢复 patch 默认值，删除�
 3. **跨轮询**：核心按 `(source, sourceEventId)` 幂等吸收；插件再把已接受的键写进 `seen.json`，重启后也不会重报。
 4. **来源关闭**：`emit` 返回 `source-disabled` 时不写 `seen`，下一轮自动重试。
 5. **dry-run**：旧核心未声明 `github-source` 时完全不 emit、不写 `seen`，升级后能补齐当前事实。
-6. **mention 游标**：只有上一轮真正处理完（非 dry-run、来源已开启、无错误）才推进 `since`/ETag；否则用完整窗口重扫。
+6. **本地提示**：未接入核心时每条事实只弹一次，记在 `notified.json`；这份记录**不写 `seen`**，接入核心后仍会重新上报。
+7. **mention 游标**：只有上一轮真正处理完（非 dry-run、来源已开启、无错误）才推进 `since`/ETag；否则用完整窗口重扫。
 
 ## 配置
 
@@ -130,6 +142,7 @@ Cordis patch 里的 `intervalMs` / `repos`。要恢复 patch 默认值，删除�
 | `cliPath` | `gh` | 可用 `DSH_GITHUB_CLI` 覆盖 |
 | `onStart` | `true` | 插件加载后是否立即轮询一次 |
 | `stateFile` | `$DSH_HOME/dsh-github-message/seen.json` | 去重状态；`false` 只在内存 |
+| `notifiedFile` | `$DSH_HOME/dsh-github-message/notified.json` | 本地提示记录；与去重分开，`false` 只在内存 |
 | `seenTtlMs` | `7776000000`（90 天） | 去重记录保留期 |
 | `seenMaxEntries` | `20000` | 去重记录上限 |
 | `logFile` | `$DSH_HOME/dsh-github-message/poll.log` | 每轮摘要；`false` 关闭 |

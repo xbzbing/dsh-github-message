@@ -47,6 +47,8 @@ export interface ResolvedConfig {
   onStart: boolean;
   /** 去重状态文件；false 表示只在内存里去重。 */
   stateFile?: string;
+  /** 本地提示记录；与去重分开，避免提示过的事实被当成已上报。false 表示只在内存里记。 */
+  notifiedFile?: string;
   /** 去重记录的保留期。 */
   seenTtlMs: number;
   /** 去重记录的最大条数。 */
@@ -177,6 +179,9 @@ export function resolveConfig(raw: unknown, env: ResolveEnv, warnings: string[] 
   const stateFile = input.stateFile === false
     ? undefined
     : text(input.stateFile) ?? join(dataDir, 'seen.json');
+  const notifiedFile = input.notifiedFile === false
+    ? undefined
+    : text(input.notifiedFile) ?? join(dataDir, 'notified.json');
   const logFile = input.logFile === false
     ? undefined
     : text(input.logFile) ?? join(dataDir, 'poll.log');
@@ -200,6 +205,7 @@ export function resolveConfig(raw: unknown, env: ResolveEnv, warnings: string[] 
     cliPath: text(input.cliPath) ?? text(env.env.DSH_GITHUB_CLI),
     onStart: input.onStart !== false,
     stateFile,
+    notifiedFile,
     seenTtlMs,
     seenMaxEntries,
     logFile,

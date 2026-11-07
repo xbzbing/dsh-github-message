@@ -31,6 +31,7 @@ function configOf(dir: string) {
     intervalMs: 60_000,
     onStart: false,
     stateFile: false,
+    notifiedFile: false,
     logFile: false,
     statsFile: join(dir, 'stats.json'),
     runtimeConfigFile: join(dir, 'config.json'),
@@ -360,6 +361,7 @@ test('dryRun 不推进 mention 游标与 ETag', async (t) => {
       intervalMs: 60_000,
       onStart: false,
       stateFile: false,
+      notifiedFile: false,
       logFile: false,
       statsFile: join(dir, 'stats.json'),
       runtimeConfigFile: join(dir, 'config.json'),
@@ -565,6 +567,77 @@ test('失败退避与限流重置进入下一轮时间', async (t) => {
   }
 });
 
+test('未接入核心时独立轮询，新消息进入本地提示且只提示一次', async (t) => {
+  const dir = tempDir(t);
+  const runtime = runtimeOf(dir, new FakeTransport(reviewHandler()));
+  try {
+    assert.equal(runtime.status().source.standalone, true);
+    runtime.start();
+    assert.equal(runtime.status().source.state, 'standalone');
+
+    await runtime.pollNow();
+    // 首次调用只取游标，不把历史积压一次弹出来。
+    const init = runtime.notices();
+    assert.equal(init.enabled, true);
+    assert.equal(init.initialized, true);
+    assert.deepEqual(init.items, []);
+    assert.equal(init.seq, 1);
+
+    const feed = runtime.notices(0);
+    assert.equal(feed.items.length, 1);
+    assert.equal(feed.items[0]?.kind, 'code-review.requested');
+    assert.equal(feed.items[0]?.title, 'PR');
+    assert.equal(feed.items[0]?.repo, 'o/r');
+    assert.equal(feed.items[0]?.number, 42);
+    assert.equal(feed.items[0]?.url, 'https://github.com/o/r/pull/42');
+    assert.equal(runtime.status().notices.count, 1);
+    assert.equal(runtime.status().notices.enabled, true);
+
+    // 同一事实下一轮不再提示，但仍计入待上报。
+    await runtime.pollNow();
+    assert.equal(runtime.notices(1).items.length, 0);
+    assert.equal(runtime.status().stats.deferred, 2);
+    assert.equal(runtime.status().notices.count, 1);
+  } finally {
+    runtime.detach();
+  }
+});
+
+test('已接入核心时不产生本地提示', async (t) => {
+  const dir = tempDir(t);
+  const runtime = runtimeOf(dir, new FakeTransport(reviewHandler()));
+  const fake = fakeService(['github-source']);
+  try {
+    runtime.attach(fake.service);
+    await runtime.pollNow();
+    assert.equal(fake.drafts.length, 1);
+    assert.equal(runtime.status().notices.count, 0);
+    assert.equal(runtime.status().notices.enabled, false);
+    assert.equal(runtime.notices(0).enabled, false);
+    assert.deepEqual(runtime.notices(0).items, []);
+  } finally {
+    runtime.detach();
+  }
+});
+
+test('核心服务消失后继续独立轮询并改走本地提示', async (t) => {
+  const dir = tempDir(t);
+  const runtime = runtimeOf(dir, new FakeTransport(reviewHandler()));
+  const fake = fakeService(['github-source']);
+  try {
+    runtime.attach(fake.service);
+    runtime.detachSource();
+    assert.equal(runtime.status().source.standalone, true);
+    assert.equal(runtime.status().source.state, 'standalone');
+
+    await runtime.pollNow();
+    assert.equal(fake.drafts.length, 0);
+    assert.equal(runtime.notices(0).items.length, 1);
+  } finally {
+    runtime.detach();
+  }
+});
+
 test('RPC 信封：status/config.set/未知方法', async (t) => {
   const dir = tempDir(t);
   const runtime = runtimeOf(dir, new FakeTransport());
@@ -585,7 +658,7 @@ test('RPC 信封：status/config.set/未知方法', async (t) => {
     assert.equal(ok.status, 200);
     const body = await ok.json() as { result?: { ok?: boolean; value?: { contractVersion?: number } } };
     assert.equal(body.result?.ok, true);
-    assert.equal(body.result?.value?.contractVersion, 1);
+    assert.equal(body.result?.value?.contractVersion, 2);
 
     const saved = await handleRpc(runtime, 'config.set', { intervalMs: 120_000 }) as { config?: { intervalMs?: number } };
     assert.equal(saved.config?.intervalMs, 120_000);

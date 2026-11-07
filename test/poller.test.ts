@@ -195,6 +195,57 @@ test('dryRun 只采集不 emit、不写 seen', async () => {
   assert.equal(again.duplicates, 0);
 });
 
+test('dryRun 时把候选交给本地提示，正常上报时不调用', async () => {
+  const gh = new FakeGh(happyHandler());
+  const seen = new MemorySeen();
+  const notices: SignalDraft[] = [];
+  const summary = await pollOnce({
+    ...depsOf(gh, [], seen),
+    config: { ...CONFIG, dryRun: true },
+    onUndelivered: (draft) => notices.push(draft),
+  });
+  assert.equal(summary.deferred, 3);
+  assert.deepEqual(notices.map((draft) => draft.kind), [
+    'code-review.requested',
+    'github.issue.opened',
+    'github.mention',
+  ]);
+
+  // 没有句柄等同于未接入核心。
+  const noHandle: SignalDraft[] = [];
+  await pollOnce({
+    client: new FakeGh(happyHandler()),
+    config: CONFIG,
+    seen: new MemorySeen(),
+    now: () => NOW,
+    onUndelivered: (draft) => noHandle.push(draft),
+  });
+  assert.equal(noHandle.length, 3);
+
+  // 正常上报路径不走本地提示。
+  const emitted: SignalDraft[] = [];
+  const normal: SignalDraft[] = [];
+  await pollOnce({
+    ...depsOf(new FakeGh(happyHandler()), emitted),
+    onUndelivered: (draft) => normal.push(draft),
+  });
+  assert.equal(emitted.length, 3);
+  assert.equal(normal.length, 0);
+});
+
+test('本地提示抛错不影响采集与统计', async () => {
+  const gh = new FakeGh(happyHandler());
+  const summary = await pollOnce({
+    ...depsOf(gh, []),
+    config: { ...CONFIG, dryRun: true },
+    onUndelivered: () => {
+      throw new Error('toast failed');
+    },
+  });
+  assert.equal(summary.deferred, 3);
+  assert.equal(summary.errors.length, 0);
+});
+
 test('来源关闭时不写 seen，下一轮重试', async () => {
   const gh = new FakeGh(happyHandler());
   const drafts: SignalDraft[] = [];

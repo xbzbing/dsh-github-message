@@ -94,7 +94,11 @@ export function apply(ctx: Scope, rawConfig: unknown = {}): void {
     pollLog: createPollLog(config.logFile, log),
   });
 
-  // 来源服务出现后注册并开始轮询；服务消失时 scope.effect 撤销注册。
+  // 无论有没有核心都开始轮询：没有核心时结果走本地提示，有核心时上报。
+  runtime.start();
+  ctx.effect?.(() => () => runtime.detach(), 'dsh-github-message: 轮询');
+
+  // 来源服务出现后注册；服务消失时退回独立轮询，不停止采集。
   ctx.inject?.(['mySuperagent'], (scope) => {
     const service = scope.mySuperagent;
     if (!service) return;
@@ -104,7 +108,7 @@ export function apply(ctx: Scope, rawConfig: unknown = {}): void {
       log.error?.('注册 GitHub 来源失败', error);
       return;
     }
-    scope.effect?.(() => () => runtime.detach(), 'dsh-github-message: 轮询与来源');
+    scope.effect?.(() => () => runtime.detachSource(), 'dsh-github-message: 来源注册');
   });
 
   // 面板 RPC：即使 mySuperagent 缺席也注册，用户仍能看登录/配置/统计。

@@ -43,9 +43,12 @@ GitHub API (gh api, read-only)
         │
         ▼
 src/poller.ts  三路独立编排、过滤、去重、统计
-        │  emit(SignalDraft)
-        ▼
-dsh-my-superagent  sources.register({ id: 'github-message', trust: 'external', kinds })
+        │
+        ├─ 已接入核心 ──► emit(SignalDraft)
+        │                   dsh-my-superagent sources.register({ id, trust: 'external', kinds })
+        │
+        └─ 未接入核心 ──► src/notices.ts 本地提示 ──► RPC notices ──► 右下角浮层
+                            （记 notified.json，不写 seen）
 ```
 
 ### 信号契约
@@ -62,11 +65,15 @@ dsh-my-superagent  sources.register({ id: 'github-message', trust: 'external', k
 
 ### 核心能力探测
 
-注册时读取 `mySuperagent.protocol.features`：
+启动时就按 `mySuperagent` 服务是否出现决定上报方式，注册后再读 `protocol.features`：
 
-- 含 `github-source`：正常上报。当前核心 P1 已实现，真实信号可进入回源确认与通知链路。
-- 不含：进入 **dryRun**，照常采集和展示候选，但**不 emit、不写 seen**；面板提示升级核心。
-  这是旧核心的兼容兜底，避免核心升级后因提前写 seen 而漏报。
+- 有服务且含 `github-source`：正常上报。当前核心 P1 已实现，真实信号可进入回源确认与通知链路。
+- 有服务但不含 `github-source`：进入 **dryRun**，照常采集，但**不 emit、不写 seen**；
+  面板提示升级核心。这是旧核心的兼容兜底，避免核心升级后因提前写 seen 而漏报。
+- **没有服务**（`standalone`）：照常轮询，把候选交给 `src/notices.ts` 走右下角提示，
+  记录写 `notified.json`、**不写 seen**；之后接入核心仍会重新上报。
+  首轮有 3 秒宽限，等同批加载的其他插件先注册服务，避免误弹。
+- 服务消失时 `detachSource()` 只撤销注册，轮询继续（改走本地提示）；插件卸载才 `detach()`。
 
 ## 技术约束
 

@@ -19,6 +19,7 @@ import {
 } from './constants.ts';
 import { createGhClient, type GhTransport } from './gh.ts';
 import { initialLogin, loginFromPoll, probeLogin, type LoginSnapshot } from './login.ts';
+import { MAX_NOTICE_BATCH, MAX_NOTICES, noticeOf, type NoticeFeed, type NoticeItem } from './notices.ts';
 import {
   describeSummary,
   pollConfigOf,
@@ -28,6 +29,7 @@ import {
 } from './poller.ts';
 import { readCoreSignals, type CoreSignalStats } from './reminders.ts';
 import { loadRuntimeConfig, saveRuntimeConfig } from './runtime-config.ts';
+import type { SignalDraft } from './signals.ts';
 import { emptyStats, loadStats, recordStats, saveStats, type PollStats } from './stats.ts';
 import { SeenStore } from './state.ts';
 
@@ -63,18 +65,21 @@ export interface RuntimeOptions {
   pollLog?: (event: Record<string, unknown>) => void;
   client?: GhTransport;
   seen?: SeenStore;
+  notified?: SeenStore;
   stats?: PollStats;
   now?: () => number;
   reminders?: () => CoreSignalStats;
 }
 
-export type SourceState = 'waiting' | 'dry-run' | 'running' | 'paused';
+export type SourceState = 'waiting' | 'standalone' | 'dry-run' | 'running' | 'paused';
 
 export interface StatusSnapshot {
   contractVersion: number;
   plugin: { name: string; version: string; startedAt: number; dataDir: string };
   source: {
     registered: boolean;
+    /** 完全没有 mySuperagent 服务：独立采集，用本地提示代替上报。 */
+    standalone: boolean;
     id: string;
     kinds: string[];
     protocol: string;
@@ -108,6 +113,7 @@ export interface StatusSnapshot {
   };
   stats: PollStats;
   reminders: CoreSignalStats;
+  notices: { enabled: boolean; count: number; lastAt?: number };
 }
 
 export class RuntimeConfigError extends Error {
@@ -121,6 +127,12 @@ export class RuntimeConfigError extends Error {
 }
 
 const MAX_BACKOFF_MS = 30 * 60_000;
+
+/**
+ * 没有 mySuperagent 时的首轮宽限：等同步加载的其他插件把服务注册上来，
+ * 避免“其实已接入，却先按独立模式弹了一条提示”。
+ */
+const STANDALONE_GRACE_MS = 3_000;
 
 function failureSummary(at: number, message: string): PollSummary {
   const stream = () => ({
@@ -153,6 +165,7 @@ export class GithubMessageRuntime {
   private readonly pollLog: (event: Record<string, unknown>) => void;
   private readonly client: GhTransport;
   private readonly seen: SeenStore;
+  private readonly notified: SeenStore;
   private readonly now: () => number;
   private readonly reminders: () => CoreSignalStats;
   private readonly startedAt: number;
@@ -173,6 +186,10 @@ export class GithubMessageRuntime {
   private attached = false;
   private loginProbed = false;
   private remindersCache: { at: number; value: CoreSignalStats } | undefined;
+  private noticeSeq = 0;
+  private noticeCount = 0;
+  private noticeAt: number | undefined;
+  private readonly noticeItems: NoticeItem[] = [];
 
   constructor(options: RuntimeOptions) {
     this.config = options.config;
@@ -187,12 +204,33 @@ export class GithubMessageRuntime {
       now: this.now(),
       logger: this.logger,
     });
+    this.notified = options.notified ?? SeenStore.open({
+      file: this.config.notifiedFile,
+      ttlMs: this.config.seenTtlMs,
+      maxEntries: this.config.seenMaxEntries,
+      now: this.now(),
+      logger: this.logger,
+    });
     this.stats = options.stats ?? loadStats(this.config.statsFile, this.logger);
     this.reminders = options.reminders ?? (() => readCoreSignals(SOURCE_ID));
     this.startedAt = this.now();
   }
 
-  /** 来源服务出现后注册并开始轮询；重复调用无副作用。 */
+  /**
+   * 开始轮询。没接入核心时也照常跑，只是把结果留在本地提示里。
+   * 首轮留一段宽限，等同批加载的其他插件把 mySuperagent 注册上来。
+   */
+  start(): void {
+    if (this.started) return;
+    this.started = true;
+    if (this.config.onStart) {
+      this.schedule(this.handle === undefined ? STANDALONE_GRACE_MS : 0);
+    } else {
+      this.schedule();
+    }
+  }
+
+  /** 来源服务出现后注册；重复调用无副作用。 */
   attach(service: SourceServiceLike): void {
     if (this.attached) return;
     this.attached = true;
@@ -208,22 +246,35 @@ export class GithubMessageRuntime {
     } catch (error) {
       this.handle = undefined;
       this.attached = false;
+      this.featureSupported = false;
       this.logger.error?.('注册 GitHub 来源失败', error);
       return;
     }
-    this.started = true;
     if (!this.featureSupported) {
       this.logger.warn?.(`核心未声明 ${REQUIRED_FEATURE}，只采集候选，不向核心上报`);
     }
-    this.schedule();
-    if (this.config.onStart) void this.pollNow();
+    if (!this.started) {
+      this.start();
+      return;
+    }
+    // 接入核心后立刻跑首轮，别让宽限期白等。
+    if (this.config.onStart) this.schedule(0);
   }
 
-  /** 来源服务消失/插件卸载：撤销注册、停表并落盘。 */
+  /** 核心服务消失：撤销注册，但继续独立轮询（改走本地提示）。 */
+  detachSource(): void {
+    this.handle?.dispose();
+    this.handle = undefined;
+    this.attached = false;
+    this.featureSupported = false;
+  }
+
+  /** 插件卸载：停表、撤销注册并落盘。 */
   detach(): void {
     this.started = false;
     this.clearTimer();
     this.seen.save(this.logger);
+    this.notified.save(this.logger);
     saveStats(this.config.statsFile, this.stats, this.logger);
     this.handle?.dispose();
     this.handle = undefined;
@@ -258,7 +309,7 @@ export class GithubMessageRuntime {
   }
 
   async pollNow(force = false): Promise<void> {
-    if (this.running || !this.started || this.handle === undefined) return;
+    if (this.running || !this.started) return;
     // 先占住 running 再探测登录，避免 attach 的首轮与面板“立即检查”并发。
     this.running = true;
     try {
@@ -266,15 +317,16 @@ export class GithubMessageRuntime {
       if (!this.loginProbed || this.login.api !== 'ok') {
         this.loginProbed = true;
         this.login = await probeLogin(this.client, this.config.timeoutMs);
-        if (!this.started || this.handle === undefined) return;
+        if (!this.started) return;
       }
       // 401 后暂停自动轮询；面板的“立即检查”可以强制再探一次。
       if (!force && this.login.api === 'expired') return;
+      const dryRun = this.handle === undefined || !this.featureSupported;
       const summary = await pollOnce({
         client: this.client,
         handle: this.handle,
         config: pollConfigOf({ ...this.config, mentionMode: this.effectiveMentionMode() }, {
-          dryRun: !this.featureSupported,
+          dryRun,
           login: this.login.username,
           // 只有上一轮真正把 mention 处理完（不是 dryRun、来源关闭或出错）才推进游标/ETag；
           // 否则用完整时间窗重扫，避免开启来源后漏掉旧 @。
@@ -285,10 +337,11 @@ export class GithubMessageRuntime {
         }),
         seen: this.seen,
         now: this.now,
-        isActive: () => this.started && this.handle !== undefined,
+        isActive: () => this.started,
+        onUndelivered: (draft) => this.pushNotice(draft),
       });
-      // detach 后在途轮询不再写见/统计，避免把已经撤销的来源状态落盘。
-      if (!this.started || this.handle === undefined) return;
+      // 插件卸载后在途轮询不再写 seen/统计，避免把已撤销的状态落盘。
+      if (!this.started) return;
       this.lastSummary = summary;
       if (summary.pollIntervalMs !== undefined) this.githubPollIntervalMs = summary.pollIntervalMs;
       this.stats = recordStats(this.stats, summary);
@@ -298,6 +351,7 @@ export class GithubMessageRuntime {
       if (summary.errors.length === 0 && summary.authenticated) this.consecutiveFailures = 0;
       else this.consecutiveFailures += 1;
       this.seen.save(this.logger);
+      this.notified.save(this.logger);
       saveStats(this.config.statsFile, this.stats, this.logger);
       this.logger.info?.(`GitHub 轮询完成：${describeSummary(summary)}`);
       for (const error of summary.errors) this.logger.warn?.(error);
@@ -380,6 +434,36 @@ export class GithubMessageRuntime {
     saveStats(this.config.statsFile, this.stats, this.logger);
   }
 
+  /**
+   * 记一条本地提示。同一事实只提示一次（notified 独立于 seen），
+   * 接入核心后仍会重新上报，由核心决定要不要通知。
+   */
+  private pushNotice(draft: SignalDraft): void {
+    const now = this.now();
+    if (this.notified.has(draft.sourceEventId, now)) return;
+    this.notified.add(draft.sourceEventId, now);
+    this.noticeSeq += 1;
+    this.noticeCount += 1;
+    this.noticeAt = now;
+    this.noticeItems.push(noticeOf(draft, this.noticeSeq));
+    if (this.noticeItems.length > MAX_NOTICES) {
+      this.noticeItems.splice(0, this.noticeItems.length - MAX_NOTICES);
+    }
+  }
+
+  /**
+   * 客户端取本地提示。不传 since 只回游标，避免打开页面时把历史积压一次性弹出来。
+   */
+  notices(since?: unknown): NoticeFeed {
+    const enabled = this.started && (this.handle === undefined || !this.featureSupported);
+    const seq = this.noticeSeq;
+    if (!enabled) return { enabled: false, seq, items: [] };
+    const cursor = typeof since === 'number' && Number.isFinite(since) ? since : undefined;
+    if (cursor === undefined) return { enabled: true, seq, initialized: true, items: [] };
+    const items = this.noticeItems.filter((item) => item.seq > cursor).slice(-MAX_NOTICE_BATCH);
+    return { enabled: true, seq, items };
+  }
+
   /** 上一轮是否把 mention 完整处理完；dryRun/来源关闭/出错时不能推进 cursor。 */
   private mentionSettled(): boolean {
     const summary = this.lastSummary;
@@ -410,7 +494,8 @@ export class GithubMessageRuntime {
   }
 
   private sourceState(): SourceState {
-    if (this.handle === undefined) return 'waiting';
+    if (!this.started) return 'waiting';
+    if (this.handle === undefined) return 'standalone';
     if (!this.featureSupported) return 'dry-run';
     if (this.login.api === 'expired') return 'paused';
     if (this.lastSummary?.sourceDisabled === true) return 'waiting';
@@ -428,6 +513,7 @@ export class GithubMessageRuntime {
       },
       source: {
         registered: this.handle !== undefined,
+        standalone: this.handle === undefined,
         id: SOURCE_ID,
         kinds: [...KINDS],
         protocol: PROTOCOL,
@@ -461,6 +547,11 @@ export class GithubMessageRuntime {
       },
       stats: this.stats,
       reminders: this.remindersSnapshot(),
+      notices: {
+        enabled: this.handle === undefined || !this.featureSupported,
+        count: this.noticeCount,
+        ...(this.noticeAt === undefined ? {} : { lastAt: this.noticeAt }),
+      },
     };
   }
 }

@@ -7,7 +7,7 @@ export const PLUGIN_VERSION = '0.1.0';
 /** host 面板 RPC 路由：/api/dsh-github-message。 */
 export const RPC_PATH = 'dsh-github-message';
 /** host/client 的契约版本；两边不一致时面板直接提示重装。 */
-export const HOST_CONTRACT = 1;
+export const HOST_CONTRACT = 2;
 
 export const SOURCE_ID = 'github-message';
 export const PROTOCOL = 'my-superagent/v1';

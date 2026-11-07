@@ -71,6 +71,8 @@ export interface PollDeps {
   cache?: PullCache;
   /** detach 后返回 false，让在途轮询尽快停下。 */
   isActive?: () => boolean;
+  /** 没接入核心时，把本该上报的事实交给本地提示；抛错不影响轮询。 */
+  onUndelivered?: (draft: SignalDraft) => void;
 }
 
 export interface StreamSummary {
@@ -157,6 +159,12 @@ async function processCandidates<T>(
     }
     if (deps.config.dryRun || deps.handle === undefined) {
       stream.deferred += 1;
+      // 本地提示是旁路：它失败不能影响采集与统计。
+      try {
+        deps.onUndelivered?.(draft);
+      } catch {
+        // 提示失败下一轮还会再来，这里不记错误。
+      }
       continue;
     }
     let result: EmitResultLike;

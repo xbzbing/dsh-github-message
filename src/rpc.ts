@@ -53,6 +53,12 @@ export async function handleRpc(
     case 'poll.now':
       await runtime.pollNow(true);
       return runtime.status();
+    case 'notices': {
+      const input = payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+        ? payload as Record<string, unknown>
+        : {};
+      return runtime.notices(input.since);
+    }
     case 'stats.reset':
       runtime.resetStats();
       return runtime.status();
