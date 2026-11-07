@@ -180,6 +180,7 @@ export function createRunner(cliPath: string, options: RunnerOptions = {}): Comm
       });
       let stdout = '';
       let stderr = '';
+      let overflow = false;
       let finished = false;
       let timer: ReturnType<typeof setTimeout> | undefined;
       const finish = (action: () => void): void => {
@@ -188,8 +189,18 @@ export function createRunner(cliPath: string, options: RunnerOptions = {}): Comm
         if (timer !== undefined) clearTimeout(timer);
         action();
       };
-      const append = (current: string, chunk: Buffer): string =>
-        current.length < MAX_OUTPUT ? current + chunk.toString('utf8') : current;
+      const append = (current: string, chunk: Buffer): string => {
+        if (current.length >= MAX_OUTPUT) {
+          overflow = true;
+          return current;
+        }
+        const next = current + chunk.toString('utf8');
+        if (next.length > MAX_OUTPUT) {
+          overflow = true;
+          return next.slice(0, MAX_OUTPUT);
+        }
+        return next;
+      };
       child.stdout?.on('data', (chunk: Buffer) => { stdout = append(stdout, chunk); });
       child.stderr?.on('data', (chunk: Buffer) => { stderr = append(stderr, chunk); });
       child.once('error', (error: NodeJS.ErrnoException) => {
@@ -199,6 +210,11 @@ export function createRunner(cliPath: string, options: RunnerOptions = {}): Comm
       });
       child.once('close', (code) => {
         finish(() => {
+          // 截断的 JSON 会以 invalid-output 被上层记错，而不是静默返回半截响应。
+          if (overflow) {
+            reject(new GhError('invalid-output', `gh 输出超过 ${MAX_OUTPUT} 字节`));
+            return;
+          }
           if (code === 0) {
             resolve(stdout);
             return;

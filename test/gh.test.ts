@@ -84,6 +84,14 @@ test('runner 把非零退出转成 GhError，缺失命令转成 not-installed', 
   );
 });
 
+test('runner 输出超限时拒绝而不是静默截断', async () => {
+  const runner = createRunner(process.execPath);
+  await assert.rejects(
+    () => runner.run(['-e', "process.stdout.write('x'.repeat(9 * 1024 * 1024))"], 20_000),
+    (error: unknown) => error instanceof GhError && error.kind === 'invalid-output',
+  );
+});
+
 test('runner 超时会杀掉子进程', async () => {
   const runner = createRunner(process.execPath);
   await assert.rejects(
