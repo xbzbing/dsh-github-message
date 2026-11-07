@@ -48,6 +48,11 @@ export const EN: Record<string, string> = {
   '核心能力': 'Core capability',
   '核心已支持 GitHub 来源': 'Core supports GitHub sources',
   '核心缺少 GitHub 来源能力': 'Core lacks GitHub source support',
+  '未接入超级助理': 'Superagent not connected',
+  '本地提示': 'Local notices',
+  '关闭': 'Dismiss',
+  '新消息会在右下角弹出提示，并计入待上报；接入超级助理后由核心接管通知。':
+    'New messages pop up in the bottom-right corner and count as deferred; once Superagent is connected the core takes over notifications.',
   '信号会经核心回源确认后进入通知链路；来源关闭时不会落库。':
     'Signals enter the notification path after core-side source verification; nothing is stored while the source is off.',
   '当前核心缺少 github-source 能力，插件只采集候选、不向核心上报。升级 dsh-my-superagent 后重新加载插件即可补齐。':
@@ -64,8 +69,9 @@ export const EN: Record<string, string> = {
   '每行一个 owner/repo，最多 {max} 个。新 Issue 只提醒这些仓库。':
     'One owner/repo per line, up to {max}. New issues are only reported for these repositories.',
   '仓库列表': 'Repositories',
-  '保存仓库': 'Save repositories',
-  '已保存仓库列表': 'Repositories saved',
+  '保存配置': 'Save settings',
+  '已保存轮询配置': 'Polling settings saved',
+  '失败退避': 'Backoff',
   '仓库名不合法：{repo}': 'Invalid repository: {repo}',
   '最多 {max} 个仓库': 'At most {max} repositories',
 
@@ -82,8 +88,6 @@ export const EN: Record<string, string> = {
   '检查周期（分钟）': 'Check interval (minutes)',
   '可设置 {min} 到 {max} 分钟，默认 5 分钟；实际间隔不会短于 GitHub 的 X-Poll-Interval。':
     'Between {min} and {max} minutes; default 5 minutes. The effective interval is never shorter than GitHub X-Poll-Interval.',
-  '保存周期': 'Save interval',
-  '已保存检查周期：{minutes} 分钟': 'Interval saved: {minutes} minutes',
   '检查周期必须是数字': 'Interval must be a number',
   '检查周期需在 {min} 到 {max} 分钟之间': 'Interval must be between {min} and {max} minutes',
 

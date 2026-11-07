@@ -9,6 +9,7 @@ import {
 import { bindLocale } from './locale.ts';
 import { GithubMessagePanel } from './panel.ts';
 import { createRpcCall, type Connection } from './rpc.ts';
+import { NoticeToasts } from './toast.ts';
 
 export const name = PACKAGE_NAME;
 export const inject = ['slots', 'connection', 'locale'] as const;
@@ -36,14 +37,14 @@ export function apply(ctx: ClientContext): void {
     ? ctx.effect.bind(ctx)
     : (execute: () => (() => void) | void): unknown => execute();
 
-  const mount = (slot: string, options: Record<string, unknown>): void => {
+  const mount = (slot: string, options: Record<string, unknown>, component: unknown = GithubMessagePanel): void => {
     effect(() => {
       const dispose = slots.inject?.(slot, () => slots.register?.({
         name: slot,
         locale: PACKAGE_NAME,
         ...options,
         inject: () => ({ t, rpcCall }),
-      }, GithubMessagePanel));
+      }, component));
       return () => {
         if (typeof dispose === 'function') dispose();
       };
@@ -59,4 +60,7 @@ export function apply(ctx: ClientContext): void {
 
   // 插件管理页里本包的配置卡；注册 key 本身就是显示开关。
   mount(BUNDLE_CONFIG_SLOT, { key: PACKAGE_NAME });
+
+  // 右下角本地提示：挂在框架级 overlay 上，不依赖设置页是否打开。
+  mount('shell.overlay', { id: `${PACKAGE_NAME}.notices` }, NoticeToasts);
 }

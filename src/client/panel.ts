@@ -16,6 +16,7 @@ import { STYLES } from './styles.ts';
 import {
   apiLabel,
   apiTone,
+  card,
   chip,
   formatInterval,
   formatNumber,
@@ -77,9 +78,16 @@ export function GithubMessagePanel(props: Props): unknown {
   const [notice, setNotice] = useState('');
   const [intervalDraft, setIntervalDraft] = useState('5');
   const [reposDraft, setReposDraft] = useState('');
+  /** 折叠状态：默认只收起运行统计，其余展开。 */
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ stats: true });
   const mounted = useRef(true);
   const dirtyInterval = useRef(false);
   const dirtyRepos = useRef(false);
+
+  const isOpen = (id: string): boolean => collapsed[id] !== true;
+  const toggle = (id: string): void => {
+    setCollapsed((current) => ({ ...current, [id]: current[id] !== true }));
+  };
 
   const load = useCallback(async (silent = false): Promise<void> => {
     if (!silent) setLoading(true);
@@ -130,37 +138,8 @@ export function GithubMessagePanel(props: Props): unknown {
     if (mounted.current) setBusy('');
   }, [load]);
 
-  const saveInterval = useCallback(async (): Promise<void> => {
-    const minutes = Number(intervalDraft);
-    if (!Number.isFinite(minutes)) {
-      setNotice(t('检查周期必须是数字'));
-      return;
-    }
-    if (minutes < MIN_CLIENT_INTERVAL_MINUTES || minutes > MAX_CLIENT_INTERVAL_MINUTES) {
-      setNotice(t('检查周期需在 {min} 到 {max} 分钟之间', {
-        min: MIN_CLIENT_INTERVAL_MINUTES,
-        max: MAX_CLIENT_INTERVAL_MINUTES,
-      }));
-      return;
-    }
-    setBusy('config.set');
-    setNotice('');
-    try {
-      const next = await rpcCall<Status>('config.set', { intervalMs: Math.round(minutes * 60_000) });
-      if (!mounted.current) return;
-      setStatus(next);
-      dirtyInterval.current = false;
-      const actual = minutesOf(next.config?.intervalMs);
-      setIntervalDraft(actual);
-      setNotice(t('已保存检查周期：{minutes} 分钟', { minutes: actual }));
-    } catch (failure) {
-      if (mounted.current) setNotice(t('操作失败：{error}', { error: errorText(failure) }));
-    } finally {
-      if (mounted.current) setBusy('');
-    }
-  }, [intervalDraft, rpcCall, t]);
-
-  const saveRepos = useCallback(async (): Promise<void> => {
+  /** 仓库与周期共用一个保存动作：先校验，再一次性写回。 */
+  const saveConfig = useCallback(async (): Promise<void> => {
     const lines = reposDraft.split('\n').map((line) => line.trim()).filter((line) => line !== '');
     const repos: string[] = [];
     for (const line of lines) {
@@ -175,21 +154,40 @@ export function GithubMessagePanel(props: Props): unknown {
       setNotice(t('最多 {max} 个仓库', { max }));
       return;
     }
+
+    const minutes = Number(intervalDraft);
+    if (!Number.isFinite(minutes)) {
+      setNotice(t('检查周期必须是数字'));
+      return;
+    }
+    if (minutes < MIN_CLIENT_INTERVAL_MINUTES || minutes > MAX_CLIENT_INTERVAL_MINUTES) {
+      setNotice(t('检查周期需在 {min} 到 {max} 分钟之间', {
+        min: MIN_CLIENT_INTERVAL_MINUTES,
+        max: MAX_CLIENT_INTERVAL_MINUTES,
+      }));
+      return;
+    }
+
     setBusy('config.set');
     setNotice('');
     try {
-      const next = await rpcCall<Status>('config.set', { repos });
+      const next = await rpcCall<Status>('config.set', {
+        intervalMs: Math.round(minutes * 60_000),
+        repos,
+      });
       if (!mounted.current) return;
       setStatus(next);
+      dirtyInterval.current = false;
       dirtyRepos.current = false;
+      setIntervalDraft(minutesOf(next.config?.intervalMs));
       setReposDraft((next.config?.repos ?? []).join('\n'));
-      setNotice(t('已保存仓库列表'));
+      setNotice(t('已保存轮询配置'));
     } catch (failure) {
       if (mounted.current) setNotice(t('操作失败：{error}', { error: errorText(failure) }));
     } finally {
       if (mounted.current) setBusy('');
     }
-  }, [reposDraft, rpcCall, status?.config?.maxRepos, t]);
+  }, [intervalDraft, reposDraft, rpcCall, status?.config?.maxRepos, t]);
 
   if (loading && status === null) {
     return h('div', { className: 'icm-panel' }, h('p', { className: 'icm-muted' }, t('正在读取…')));
@@ -201,7 +199,9 @@ export function GithubMessagePanel(props: Props): unknown {
   const reminders = status?.reminders;
   const source = status?.source;
   const registered = source?.registered === true;
+  const standalone = source?.standalone === true;
   const featureSupported = source?.featureSupported === true;
+  const notices = status?.notices;
   const contractMismatch = status !== null && status.contractVersion !== HOST_CONTRACT;
   const note = loginNote(t, login);
   const canPoll = registered;
@@ -236,168 +236,187 @@ export function GithubMessagePanel(props: Props): unknown {
       metric(t('核心信号'), formatNumber(reminders?.total))),
 
     h('div', { className: 'icm-grid' },
-      h('section', { className: 'icm-card icm-card--primary' },
-        h('div', { className: 'icm-card-head' },
-          h('h3', null, t('GitHub 登录')),
-          h('span', { className: 'icm-pill', 'data-tone': apiTone(login) }, apiLabel(t, login))),
-        h('dl', { className: 'icm-kv' },
-          row(t('账号'), login?.username ?? '—'),
-          row(t('认证方式'), login?.tokenSource ?? '—'),
-          row(t('Token scopes'), login?.scopes?.length ? login.scopes.join(', ') : '—'),
-          row(t('@ 方式'), config?.effectiveMentionMode ?? '—'),
-          row(t('通知权限'), login?.notifications === 'ok'
-            ? t('有')
-            : login?.notifications === 'missing' ? t('缺失') : t('未知')),
-          row(t('最近检查'), formatTime(login?.checkedAt))),
-        note !== undefined ? h('p', { className: 'icm-note' }, note) : null,
-        login?.detail !== undefined && note === undefined
-          ? h('p', { className: 'icm-hint icm-code' }, login.detail)
-          : null,
-        h('div', { className: 'icm-actions' },
+      card({
+        id: 'login',
+        title: t('GitHub 登录'),
+        className: 'icm-card--primary',
+        open: isOpen('login'),
+        onToggle: () => toggle('login'),
+        pill: h('span', { className: 'icm-pill', 'data-tone': apiTone(login) }, apiLabel(t, login)),
+        children: [
+          h('dl', { className: 'icm-kv' },
+            row(t('账号'), login?.username ?? '—'),
+            row(t('认证方式'), login?.tokenSource ?? '—'),
+            row(t('Token scopes'), login?.scopes?.length ? login.scopes.join(', ') : '—'),
+            row(t('@ 方式'), config?.effectiveMentionMode ?? '—'),
+            row(t('通知权限'), login?.notifications === 'ok'
+              ? t('有')
+              : login?.notifications === 'missing' ? t('缺失') : t('未知')),
+            row(t('最近检查'), formatTime(login?.checkedAt))),
+          note !== undefined ? h('p', { className: 'icm-note' }, note) : null,
+          login?.detail !== undefined && note === undefined
+            ? h('p', { className: 'icm-hint icm-code' }, login.detail)
+            : null,
+          h('div', { className: 'icm-actions' },
+            h('button', {
+              type: 'button',
+              className: 'icm-btn icm-btn--primary',
+              disabled: busy !== '',
+              onClick: () => void run('login.check', t('登录检查完成')),
+            }, busy === 'login.check' ? t('检查中…') : t('检查登录'))),
+        ],
+      }),
+
+      card({
+        id: 'core',
+        title: t('核心能力'),
+        className: 'icm-card--secondary',
+        open: isOpen('core'),
+        onToggle: () => toggle('core'),
+        pill: h('span', { className: 'icm-pill', 'data-tone': featureSupported ? 'success' : 'warning' },
+          featureSupported
+            ? t('核心已支持 GitHub 来源')
+            : standalone ? t('未接入超级助理') : t('核心缺少 GitHub 来源能力')),
+        children: [
+          h('p', { className: 'icm-note' }, featureSupported
+            ? t('信号会经核心回源确认后进入通知链路；来源关闭时不会落库。')
+            : standalone
+              ? t('新消息会在右下角弹出提示，并计入待上报；接入超级助理后由核心接管通知。')
+              : t('当前核心缺少 github-source 能力，插件只采集候选、不向核心上报。升级 dsh-my-superagent 后重新加载插件即可补齐。')),
+          h('dl', { className: 'icm-kv' },
+            row(t('来源状态'), sourceLabel(t, source?.state)),
+            row(t('来源'), source?.id ?? '—'),
+            row(t('协议'), source?.protocol ?? '—'),
+            row(t('信任级别'), source?.trust ?? '—'),
+            row(t('本地提示'), formatNumber(notices?.count))),
+          h('p', { className: 'icm-hint' },
+            t('来源在超级助理的「来源」页关闭时，信号不会落库；打开后下一轮自动补齐。')),
+        ],
+      }),
+
+      card({
+        id: 'poll',
+        title: t('轮询配置'),
+        className: 'icm-card--wide',
+        open: isOpen('poll'),
+        onToggle: () => toggle('poll'),
+        children: [
+          h('div', { className: 'icm-config-stack' },
+            h('div', { className: 'icm-field-block' },
+              h('h4', null, t('维护仓库')),
+              h('p', { className: 'icm-note' },
+                t('每行一个 owner/repo，最多 {max} 个。新 Issue 只提醒这些仓库。', {
+                  max: config?.maxRepos ?? 10,
+                })),
+              h('label', { className: 'icm-field' },
+                h('span', null, t('仓库列表')),
+                h('textarea', {
+                  className: 'icm-textarea',
+                  rows: 4,
+                  spellCheck: false,
+                  value: reposDraft,
+                  placeholder: 'owner/repo',
+                  onChange: (event: { target: { value: string } }) => {
+                    dirtyRepos.current = true;
+                    setReposDraft(event.target.value);
+                  },
+                }))),
+            h('div', { className: 'icm-field-block' },
+              h('h4', null, t('检查周期')),
+              h('p', { className: 'icm-note' },
+                t('当前周期：{interval}', { interval: formatInterval(config?.intervalMs, t) }),
+                ' · ',
+                t('下一轮：{time}', { time: formatTime(status?.poll?.nextPollAt) }),
+                backoff > 0 ? ` · ${t('失败退避')} ${formatInterval(backoff, t)}` : ''),
+              h('label', { className: 'icm-field' },
+                h('span', null, t('检查周期（分钟）')),
+                h('input', {
+                  className: 'icm-input',
+                  type: 'number',
+                  min: MIN_CLIENT_INTERVAL_MINUTES,
+                  max: MAX_CLIENT_INTERVAL_MINUTES,
+                  step: 1,
+                  value: intervalDraft,
+                  onChange: (event: { target: { value: string } }) => {
+                    dirtyInterval.current = true;
+                    setIntervalDraft(event.target.value);
+                  },
+                })),
+              h('p', { className: 'icm-hint' },
+                t('可设置 {min} 到 {max} 分钟，默认 5 分钟；实际间隔不会短于 GitHub 的 X-Poll-Interval。', {
+                  min: MIN_CLIENT_INTERVAL_MINUTES,
+                  max: MAX_CLIENT_INTERVAL_MINUTES,
+                })))),
+          h('div', { className: 'icm-actions' },
+            h('button', {
+              type: 'button',
+              className: 'icm-btn icm-btn--primary',
+              disabled: busy !== '',
+              onClick: () => void saveConfig(),
+            }, busy === 'config.set' ? t('保存中…') : t('保存配置'))),
+        ],
+      }),
+
+      card({
+        id: 'stats',
+        title: t('运行统计'),
+        className: 'icm-card--wide',
+        open: isOpen('stats'),
+        onToggle: () => toggle('stats'),
+        actions: h('div', { className: 'icm-actions icm-actions--head' },
           h('button', {
             type: 'button',
-            className: 'icm-btn icm-btn--primary',
+            className: 'icm-btn',
+            disabled: busy !== '' || !canPoll,
+            onClick: () => void run('poll.now', t('已触发一次检查')),
+          }, busy === 'poll.now' ? t('检查中…') : t('立即检查')),
+          h('button', {
+            type: 'button',
+            className: 'icm-btn',
             disabled: busy !== '',
-            onClick: () => void run('login.check', t('登录检查完成')),
-          }, busy === 'login.check' ? t('检查中…') : t('检查登录')))),
-
-      h('section', { className: 'icm-card icm-card--secondary' },
-        h('div', { className: 'icm-card-head' },
-          h('h3', null, t('核心能力')),
-          h('span', { className: 'icm-pill', 'data-tone': featureSupported ? 'success' : 'warning' },
-            featureSupported ? t('核心已支持 GitHub 来源') : t('核心缺少 GitHub 来源能力'))),
-        h('p', { className: 'icm-note' }, featureSupported
-          ? t('信号会经核心回源确认后进入通知链路；来源关闭时不会落库。')
-          : t('当前核心缺少 github-source 能力，插件只采集候选、不向核心上报。升级 dsh-my-superagent 后重新加载插件即可补齐。')),
-        h('dl', { className: 'icm-kv' },
-          row(t('来源状态'), sourceLabel(t, source?.state)),
-          row(t('来源'), source?.id ?? '—'),
-          row(t('协议'), source?.protocol ?? '—'),
-          row(t('信任级别'), source?.trust ?? '—')),
-        h('p', { className: 'icm-hint' },
-          t('来源在超级助理的「来源」页关闭时，信号不会落库；打开后下一轮自动补齐。'))),
-
-      h('section', { className: 'icm-card icm-card--wide' },
-        h('div', { className: 'icm-card-head' },
-          h('h3', null, t('轮询配置'))),
-        h('div', { className: 'icm-config-grid' },
-          h('div', { className: 'icm-config-block' },
-            h('h4', null, t('维护仓库')),
-            h('p', { className: 'icm-note' },
-              t('每行一个 owner/repo，最多 {max} 个。新 Issue 只提醒这些仓库。', {
-                max: config?.maxRepos ?? 10,
-              })),
-            h('label', { className: 'icm-field' },
-              h('span', null, t('仓库列表')),
-              h('textarea', {
-                className: 'icm-textarea',
-                rows: 5,
-                spellCheck: false,
-                value: reposDraft,
-                placeholder: 'owner/repo',
-                onChange: (event: { target: { value: string } }) => {
-                  dirtyRepos.current = true;
-                  setReposDraft(event.target.value);
-                },
-              })),
-            h('div', { className: 'icm-actions' },
-              h('button', {
-                type: 'button',
-                className: 'icm-btn icm-btn--primary',
-                disabled: busy !== '',
-                onClick: () => void saveRepos(),
-              }, busy === 'config.set' ? t('保存中…') : t('保存仓库')))),
-          h('div', { className: 'icm-config-block' },
-            h('h4', null, t('检查周期')),
-            h('p', { className: 'icm-note' },
-              t('当前周期：{interval}', { interval: formatInterval(config?.intervalMs, t) }),
-              ' · ',
-              t('下一轮：{time}', { time: formatTime(status?.poll?.nextPollAt) })),
-            backoff > 0
-              ? h('p', { className: 'icm-hint' }, `${t('失败')} · ${formatInterval(backoff, t)}`)
-              : null,
-            h('label', { className: 'icm-field' },
-              h('span', null, t('检查周期（分钟）')),
-              h('input', {
-                className: 'icm-input',
-                type: 'number',
-                min: MIN_CLIENT_INTERVAL_MINUTES,
-                max: MAX_CLIENT_INTERVAL_MINUTES,
-                step: 1,
-                value: intervalDraft,
-                onChange: (event: { target: { value: string } }) => {
-                  dirtyInterval.current = true;
-                  setIntervalDraft(event.target.value);
-                },
-              })),
-            h('p', { className: 'icm-hint' },
-              t('可设置 {min} 到 {max} 分钟，默认 5 分钟；实际间隔不会短于 GitHub 的 X-Poll-Interval。', {
-                min: MIN_CLIENT_INTERVAL_MINUTES,
-                max: MAX_CLIENT_INTERVAL_MINUTES,
-              })),
-            h('div', { className: 'icm-actions' },
-              h('button', {
-                type: 'button',
-                className: 'icm-btn icm-btn--primary',
-                disabled: busy !== '',
-                onClick: () => void saveInterval(),
-              }, busy === 'config.set' ? t('保存中…') : t('保存周期')))))),
-
-      h('section', { className: 'icm-card icm-card--wide' },
-        h('div', { className: 'icm-card-head' },
-          h('h3', null, t('运行统计')),
-          h('div', { className: 'icm-actions icm-actions--head' },
-            h('button', {
-              type: 'button',
-              className: 'icm-btn',
-              disabled: busy !== '' || !canPoll,
-              onClick: () => void run('poll.now', t('已触发一次检查')),
-            }, busy === 'poll.now' ? t('检查中…') : t('立即检查')),
-            h('button', {
-              type: 'button',
-              className: 'icm-btn',
-              disabled: busy !== '',
-              onClick: () => void run('stats.reset', t('统计已重置')),
-            }, t('重置统计')))),
-
-        h('div', { className: 'icm-section' },
-          h('div', { className: 'icm-section-head' },
-            h('h4', null, t('三路上报')),
-            chip(`${t('累计')} ${formatNumber(stats?.emitted)}`, (stats?.emitted ?? 0) > 0 ? 'success' : undefined)),
-          kindTable(t, stats)),
-
-        h('div', { className: 'icm-section icm-section--split' },
-          h('div', { className: 'icm-section-col' },
+            onClick: () => void run('stats.reset', t('统计已重置')),
+          }, t('重置统计'))),
+        children: [
+          h('div', { className: 'icm-section' },
             h('div', { className: 'icm-section-head' },
-              h('h4', null, t('最近轮询')),
-              chip(
-                stats?.lastPollOk === undefined ? t('未知')
-                  : stats.lastPollOk ? t('成功') : t('失败'),
-                stats?.lastPollOk === undefined ? undefined : stats.lastPollOk ? 'success' : 'danger')),
-            h('dl', { className: 'icm-kv' },
-              row(t('时间'), formatTime(stats?.lastPollAt)),
-              row(t('上报'), formatNumber(lastSummary(stats)?.emitted ?? 0)),
-              row(t('去重'), formatNumber(lastSummary(stats)?.duplicates ?? 0))),
-            stats?.lastPollOk === false && stats.lastError !== undefined
-              ? h('p', { className: 'icm-note icm-note--danger' }, stats.lastError)
-              : null),
-          h('div', { className: 'icm-section-col' },
-            h('div', { className: 'icm-section-head' },
-              h('h4', null, t('核心信号')),
-              chip(`${t('总数')} ${formatNumber(reminders?.total)}`,
-                (reminders?.total ?? 0) > 0 ? 'success' : undefined)),
-            reminders !== undefined && (reminders.total ?? 0) > 0
-              ? h('div', { className: 'icm-chips' }, ...signalChips(t, reminders))
-              : h('p', { className: 'icm-note' }, reminderNote(t, reminders)),
-            (reminders?.total ?? 0) > 0
-              ? h('p', { className: 'icm-hint' }, reminderNote(t, reminders))
-              : null)),
+              h('h4', null, t('三路上报')),
+              chip(`${t('累计')} ${formatNumber(stats?.emitted)}`, (stats?.emitted ?? 0) > 0 ? 'success' : undefined)),
+            kindTable(t, stats)),
 
-        h('div', { className: 'icm-section' },
-          h('div', { className: 'icm-section-head' },
-            h('h4', null, t('轮询历史')),
-            h('span', { className: 'icm-hint' }, t('最近 5 轮'))),
-          historyTable(t, stats?.history ?? [])))),
+          h('div', { className: 'icm-section icm-section--split' },
+            h('div', { className: 'icm-section-col' },
+              h('div', { className: 'icm-section-head' },
+                h('h4', null, t('最近轮询')),
+                chip(
+                  stats?.lastPollOk === undefined ? t('未知')
+                    : stats.lastPollOk ? t('成功') : t('失败'),
+                  stats?.lastPollOk === undefined ? undefined : stats.lastPollOk ? 'success' : 'danger')),
+              h('dl', { className: 'icm-kv' },
+                row(t('时间'), formatTime(stats?.lastPollAt)),
+                row(t('上报'), formatNumber(lastSummary(stats)?.emitted ?? 0)),
+                row(t('去重'), formatNumber(lastSummary(stats)?.duplicates ?? 0))),
+              stats?.lastPollOk === false && stats.lastError !== undefined
+                ? h('p', { className: 'icm-note icm-note--danger' }, stats.lastError)
+                : null),
+            h('div', { className: 'icm-section-col' },
+              h('div', { className: 'icm-section-head' },
+                h('h4', null, t('核心信号')),
+                chip(`${t('总数')} ${formatNumber(reminders?.total)}`,
+                  (reminders?.total ?? 0) > 0 ? 'success' : undefined)),
+              reminders !== undefined && (reminders.total ?? 0) > 0
+                ? h('div', { className: 'icm-chips' }, ...signalChips(t, reminders))
+                : h('p', { className: 'icm-note' }, reminderNote(t, reminders)),
+              (reminders?.total ?? 0) > 0
+                ? h('p', { className: 'icm-hint' }, reminderNote(t, reminders))
+                : null)),
+
+          h('div', { className: 'icm-section' },
+            h('div', { className: 'icm-section-head' },
+              h('h4', null, t('轮询历史')),
+              h('span', { className: 'icm-hint' }, t('最近 5 轮'))),
+            historyTable(t, stats?.history ?? [])),
+        ],
+      })),
 
     h('p', { className: 'icm-footnote' },
       t('插件只读 GitHub，不评审、不评论、不写回；评审与 Issue 分析由超级助理完成。')));

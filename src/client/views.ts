@@ -91,6 +91,7 @@ export interface Status {
   plugin?: { name?: string; version?: string; startedAt?: number; dataDir?: string };
   source?: {
     registered?: boolean;
+    standalone?: boolean;
     id?: string;
     kinds?: string[];
     protocol?: string;
@@ -124,6 +125,7 @@ export interface Status {
   };
   stats?: Stats;
   reminders?: Reminders;
+  notices?: { enabled?: boolean; count?: number; lastAt?: number };
 }
 
 export function formatTime(value: number | undefined): string {
@@ -151,6 +153,7 @@ export function minutesOf(ms: number | undefined): string {
 export function sourceLabel(t: Translate, state: string | undefined): string {
   switch (state) {
     case 'running': return t('运行中');
+    case 'standalone': return t('本地提示');
     case 'dry-run': return t('采集但不推送');
     case 'paused': return t('已暂停');
     default: return t('等待开启');
@@ -159,7 +162,7 @@ export function sourceLabel(t: Translate, state: string | undefined): string {
 
 export function sourceTone(state: string | undefined): string {
   if (state === 'running') return 'success';
-  if (state === 'dry-run') return 'warning';
+  if (state === 'standalone' || state === 'dry-run') return 'warning';
   if (state === 'paused') return 'danger';
   return 'muted';
 }
@@ -214,6 +217,42 @@ export function row(label: string, value: string): unknown {
   return h('div', { className: 'icm-kv-row', key: label },
     h('dt', null, label),
     h('dd', null, value));
+}
+
+export interface CardOptions {
+  id: string;
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  className?: string;
+  pill?: unknown;
+  actions?: unknown;
+  children: unknown[];
+}
+
+/** 可折叠卡片：标题本身是按钮，右侧留给状态徽标或操作。 */
+export function card(options: CardOptions): unknown {
+  const { id, title, open, onToggle } = options;
+  return h('section', {
+    className: `icm-card${options.className === undefined ? '' : ` ${options.className}`}`,
+    'data-open': open ? 'true' : 'false',
+  },
+  h('div', { className: 'icm-card-head' },
+    h('h3', { className: 'icm-card-title' },
+      h('button', {
+        type: 'button',
+        className: 'icm-card-toggle',
+        'aria-expanded': open ? 'true' : 'false',
+        'aria-controls': `icm-body-${id}`,
+        onClick: onToggle,
+      },
+      h('span', { className: 'icm-chevron', 'aria-hidden': 'true' }),
+      h('span', null, title))),
+    options.pill ?? null,
+    options.actions ?? null),
+  open
+    ? h('div', { className: 'icm-card-body', id: `icm-body-${id}` }, ...options.children)
+    : null);
 }
 
 export function streamStats(stats: Stats | undefined, name: string): KindStats {

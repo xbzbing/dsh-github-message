@@ -26,7 +26,15 @@ export const STYLES = `
 .icm-card--wide{grid-column:1/-1}
 .icm-card h3{margin:0;font-size:15px;line-height:1.4}
 .icm-card h4{margin:0 0 8px;color:var(--icm-muted);font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase}
-.icm-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.icm-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.icm-card-title{margin:0;font-size:15px;line-height:1.4}
+.icm-card-toggle{display:inline-flex;align-items:center;gap:7px;padding:0;border:0;background:none;color:inherit;font:inherit;font-size:15px;font-weight:600;cursor:pointer;text-align:left}
+.icm-card-toggle:hover{color:var(--icm-accent)}
+.icm-card-toggle:focus-visible{outline:2px solid var(--icm-accent);outline-offset:3px;border-radius:4px}
+.icm-chevron{flex:none;width:7px;height:7px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform .16s ease;margin-left:1px}
+.icm-card[data-open=true] .icm-chevron{transform:rotate(45deg)}
+.icm-card-body{display:flex;flex-direction:column;flex:1;min-width:0;margin-top:14px}
+.icm-card[data-open=false]{align-self:start}
 .icm-kv{display:flex;flex-direction:column;gap:8px;margin:0}
 .icm-kv-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:12px}
 .icm-kv-row dt{margin:0;color:var(--icm-muted)}
@@ -34,7 +42,7 @@ export const STYLES = `
 .icm-note{margin:10px 0 0;color:var(--icm-muted);font-size:12px;line-height:1.6}
 .icm-hint{margin:6px 0 0;color:var(--icm-muted);font-size:11px;line-height:1.5}
 .icm-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px}
-.icm-card>.icm-actions,.icm-config-block>.icm-actions{margin-top:auto;padding-top:14px}
+.icm-card-body>.icm-actions{margin-top:auto;padding-top:14px}
 .icm-btn{display:inline-flex;align-items:center;justify-content:center;min-height:30px;padding:5px 12px;border:1px solid var(--icm-border);border-radius:7px;background:var(--icm-surface);color:var(--icm-ink);font:inherit;font-size:12px;cursor:pointer;transition:border-color .16s ease,background .16s ease}
 .icm-btn:hover:not(:disabled){border-color:var(--icm-accent)}
 .icm-btn:disabled{opacity:.55;cursor:not-allowed}
@@ -43,9 +51,11 @@ export const STYLES = `
 .icm-field{display:flex;flex-direction:column;gap:6px;margin-top:12px;font-size:12px}
 .icm-input,.icm-textarea{min-height:32px;padding:5px 9px;border:1px solid var(--icm-border);border-radius:7px;background:var(--icm-surface);color:inherit;font:inherit;font-size:13px;width:100%}
 .icm-textarea{min-height:110px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.6}
-.icm-config-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(240px,.65fr);gap:22px;align-items:stretch}
-.icm-config-block{display:flex;flex-direction:column;min-width:0;height:100%}
-.icm-config-block h4{margin-top:0}
+.icm-config-stack{display:flex;flex-direction:column;gap:22px;max-width:680px}
+.icm-field-block{display:flex;flex-direction:column;min-width:0}
+.icm-field-block h4{margin:0}
+.icm-field-block>.icm-field{margin-top:10px}
+.icm-field-block>.icm-field>.icm-input{max-width:180px}
 .icm-actions--head{margin-top:0;padding-top:0;justify-content:flex-end}
 .icm-section{display:flex;flex-direction:column;min-width:0}
 .icm-section+.icm-section{border-top:1px solid var(--icm-border);padding-top:14px;margin-top:14px}
@@ -69,6 +79,6 @@ export const STYLES = `
 .icm-table--stats td:first-child,.icm-table--stats th:first-child{text-align:left}
 .icm-footnote{margin:0;color:var(--icm-muted);font-size:11px;line-height:1.6}
 @media (max-width:920px){.icm-card--primary,.icm-card--secondary{grid-column:1/-1}}
-@media (max-width:760px){.icm-overview{grid-template-columns:repeat(2,minmax(0,1fr))}.icm-config-grid{grid-template-columns:1fr}}
+@media (max-width:760px){.icm-overview{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:640px){.icm-panel{padding:14px}.icm-kv-row{align-items:flex-start;flex-direction:column;gap:2px}.icm-kv-row dd{text-align:left}}
 `;
