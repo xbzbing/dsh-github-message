@@ -229,6 +229,79 @@ test('轮询成功后更新统计与登录态，来源关闭时进入 waiting', 
   }
 });
 
+test('dryRun 不推进 mention 游标与 ETag', async (t) => {
+  const dir = tempDir(t);
+  const transport = new FakeTransport((request) => {
+    if (request.endpoint === 'notifications') {
+      return {
+        status: 200,
+        headers: { etag: 'W/"v1"' },
+        body: JSON.stringify([{
+          id: '1',
+          reason: 'mention',
+          updated_at: '2026-11-07T09:00:00Z',
+          subject: {
+            title: '讨论',
+            url: 'https://api.github.com/repos/o/r/issues/5',
+            latest_comment_url: 'https://api.github.com/repos/o/r/issues/comments/99',
+            type: 'Issue',
+          },
+          repository: { full_name: 'o/r' },
+        }]),
+      };
+    }
+    if (request.endpoint === 'repos/o/r/issues/comments/99') {
+      return {
+        status: 200,
+        headers: {},
+        body: JSON.stringify({
+          id: 99,
+          body: '请 @alice 看一下',
+          user: { login: 'bob' },
+          html_url: 'https://github.com/o/r/issues/5#issuecomment-99',
+          updated_at: '2026-11-07T09:00:00Z',
+        }),
+      };
+    }
+    if (request.endpoint === 'user') return { status: 200, headers: {}, body: '{"login":"alice"}' };
+    if (request.endpoint === 'search/issues') {
+      return { status: 200, headers: {}, body: '{"total_count":0,"items":[]}' };
+    }
+    throw new Error(`unexpected ${request.endpoint}`);
+  });
+  const runtime = new GithubMessageRuntime({
+    config: resolveConfig({
+      dataDir: dir,
+      intervalMs: 60_000,
+      onStart: false,
+      stateFile: false,
+      logFile: false,
+      statsFile: join(dir, 'stats.json'),
+      runtimeConfigFile: join(dir, 'config.json'),
+      windowMs: DAY,
+      repos: [],
+    }, { env: {}, home: dir }),
+    logger: {},
+    now: () => NOW,
+    client: transport,
+    seen: SeenStore.open({ file: undefined, ttlMs: DAY, maxEntries: 10, now: NOW }),
+    reminders: () => ({ available: false, total: 0, byState: {}, byKind: {}, code: 'db-missing', note: 'test' }),
+  });
+  const fake = fakeService([]);
+  try {
+    runtime.attach(fake.service);
+    await runtime.pollNow();
+    await runtime.pollNow();
+    const calls = transport.calls.filter((call) => call.endpoint === 'notifications');
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0]?.headers?.['If-None-Match'], undefined);
+    assert.equal(calls[1]?.headers?.['If-None-Match'], undefined);
+    assert.equal(calls[1]?.params?.since, new Date(NOW - DAY).toISOString());
+  } finally {
+    runtime.detach();
+  }
+});
+
 test('setConfig 保存周期与仓库，校验非法值', async (t) => {
   const dir = tempDir(t);
   const runtime = runtimeOf(dir, new FakeTransport());

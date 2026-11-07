@@ -281,8 +281,12 @@ export class GithubMessageRuntime {
         config: pollConfigOf({ ...this.config, mentionMode: this.effectiveMentionMode() }, {
           dryRun: !this.featureSupported,
           login: this.login.username,
-          ...(this.stats.lastSuccessAt === undefined ? {} : { mentionSinceMs: this.stats.lastSuccessAt }),
-          ...(this.mentionEtag === undefined ? {} : { mentionEtag: this.mentionEtag }),
+          // 只有上一轮真正把 mention 处理完（不是 dryRun、来源关闭或出错）才推进游标/ETag；
+          // 否则用完整时间窗重扫，避免开启来源后漏掉旧 @。
+          ...(this.mentionSettled() && this.stats.lastSuccessAt !== undefined
+            ? { mentionSinceMs: this.stats.lastSuccessAt }
+            : {}),
+          ...(this.mentionSettled() && this.mentionEtag !== undefined ? { mentionEtag: this.mentionEtag } : {}),
         }),
         seen: this.seen,
         now: this.now,
@@ -290,7 +294,8 @@ export class GithubMessageRuntime {
       this.lastSummary = summary;
       this.stats = recordStats(this.stats, summary);
       this.login = loginFromPoll(this.login, summary);
-      if (summary.mentionEtag !== undefined) this.mentionEtag = summary.mentionEtag;
+      if (this.mentionSettled() && summary.mentionEtag !== undefined) this.mentionEtag = summary.mentionEtag;
+      if (!this.mentionSettled()) this.mentionEtag = undefined;
       if (summary.errors.length === 0 && summary.authenticated) this.consecutiveFailures = 0;
       else this.consecutiveFailures += 1;
       this.seen.save(this.logger);
@@ -374,6 +379,17 @@ export class GithubMessageRuntime {
     this.stats = emptyStats();
     this.lastSummary = undefined;
     saveStats(this.config.statsFile, this.stats, this.logger);
+  }
+
+  /** 上一轮是否把 mention 完整处理完；dryRun/来源关闭/出错时不能推进 cursor。 */
+  private mentionSettled(): boolean {
+    const summary = this.lastSummary;
+    return summary !== undefined
+      && !summary.dryRun
+      && !summary.sourceDisabled
+      && summary.mentionComplete
+      && summary.authenticated
+      && summary.errors.length === 0;
   }
 
   /** 缺少 notifications scope 时自动降级为 search，避免每轮都 403。 */
