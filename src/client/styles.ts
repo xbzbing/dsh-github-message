@@ -46,7 +46,19 @@ export const STYLES = `
 .icm-config-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(240px,.65fr);gap:22px;align-items:stretch}
 .icm-config-block{display:flex;flex-direction:column;min-width:0;height:100%}
 .icm-config-block h4{margin-top:0}
-.icm-split{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-top:14px}
+.icm-actions--head{margin-top:0;padding-top:0;justify-content:flex-end}
+.icm-section{display:flex;flex-direction:column;min-width:0}
+.icm-section+.icm-section{border-top:1px solid var(--icm-border);padding-top:14px;margin-top:14px}
+.icm-section-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.icm-section-head h4{margin:0}
+.icm-section--split{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:22px}
+.icm-section-col{display:flex;flex-direction:column;min-width:0}
+.icm-chips{display:flex;flex-wrap:wrap;gap:6px}
+.icm-chip{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border:1px solid var(--icm-border);border-radius:999px;font-size:11px;line-height:1.5;color:var(--icm-muted);background:var(--icm-surface);font-variant-numeric:tabular-nums}
+.icm-chip[data-tone=success]{color:var(--icm-ok);border-color:color-mix(in srgb,var(--icm-ok) 32%,transparent);background:color-mix(in srgb,var(--icm-ok) 10%,transparent)}
+.icm-chip[data-tone=danger]{color:var(--icm-danger);border-color:color-mix(in srgb,var(--icm-danger) 32%,transparent);background:color-mix(in srgb,var(--icm-danger) 10%,transparent)}
+.icm-chip[data-tone=warning]{color:var(--icm-warn);border-color:color-mix(in srgb,var(--icm-warn) 32%,transparent);background:color-mix(in srgb,var(--icm-warn) 10%,transparent)}
+.icm-note--danger{color:var(--icm-danger)}
 .icm-muted{color:var(--icm-muted)}.icm-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}
 .icm-table-wrap{margin-top:8px;overflow-x:auto}.icm-table{width:100%;border-collapse:collapse;font-size:11px}
 .icm-table td:first-child,.icm-table th:first-child{white-space:normal}

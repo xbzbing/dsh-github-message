@@ -65,7 +65,8 @@ client 半注册在 `settings.section` 和 `plugins.bundle.config` 两个槽位�
 - **核心能力**：核心是否声明 `github-source`。当前核心 P1 已支持；旧版本缺失时提示升级并进入 dry-run。
 - **维护仓库**：每行一个 `owner/repo`，保存后立即生效；issue 流只提醒这些仓库。
 - **检查周期**：当前周期、下一轮时间、失败退避；按分钟修改并保存。
-- **运行统计**：顶部概览 + review / issue / mention 明细；最近 5 轮摘要。
+- **运行统计**：卡片头放「立即检查 / 重置统计」；内部分三段——三路上报明细、
+  最近轮询与核心信号并排、轮询历史（最近 5 轮），段间用分隔线区分。
 - **核心信号**：只读 `$DSH_HOME/dsh-my-superagent/state.sqlite`，按 kind/state 统计
   `source='github-message'` 的信号；读不到时降级提示。
 - **操作**：立即检查、重置统计。

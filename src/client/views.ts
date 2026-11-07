@@ -251,6 +251,15 @@ export function kindTable(t: Translate, stats: Stats | undefined): unknown {
       h('tbody', null, ...rows)));
 }
 
+export function chip(text: string, tone?: string): unknown {
+  return h('span', { className: 'icm-chip', ...(tone === undefined ? {} : { 'data-tone': tone }) }, text);
+}
+
+export function lastSummary(stats: Stats | undefined): Summary | undefined {
+  const history = stats?.history ?? [];
+  return history[history.length - 1];
+}
+
 export function historyTable(t: Translate, history: Summary[]): unknown {
   if (history.length === 0) return h('p', { className: 'icm-note' }, t('还没有轮询记录'));
   const rows = history.slice(-5).reverse();
@@ -272,17 +281,17 @@ export function historyTable(t: Translate, history: Summary[]): unknown {
         h('td', null, formatNumber(item.errors?.length)))))));
 }
 
-export function coreSignalRows(t: Translate, reminders: Reminders | undefined): unknown[] {
-  const rows: unknown[] = [];
-  const byState = Object.entries(reminders?.byState ?? {}).filter(([, value]) => value > 0);
-  for (const [state, count] of byState) {
-    rows.push(row(`${t('按状态')} · ${state}`, formatNumber(count)));
+export function signalChips(t: Translate, reminders: Reminders | undefined): unknown[] {
+  const chips: unknown[] = [];
+  for (const [state, count] of Object.entries(reminders?.byState ?? {}).filter(([, value]) => value > 0)) {
+    const tone = state === 'ignored' ? 'warning'
+      : state === 'admitted' || state === 'digested' ? 'success' : undefined;
+    chips.push(chip(`${state} ${formatNumber(count)}`, tone));
   }
-  const byKind = Object.entries(reminders?.byKind ?? {});
-  for (const [kind, states] of byKind) {
+  for (const [kind, states] of Object.entries(reminders?.byKind ?? {})) {
     const detail = Object.entries(states).map(([state, count]) => `${state} ${count}`).join(' · ');
-    rows.push(row(`${t('按类型')} · ${kindLabel(t, kind)}`, detail));
+    chips.push(chip(`${kindLabel(t, kind)} · ${detail}`));
   }
-  return rows;
+  return chips;
 }
 

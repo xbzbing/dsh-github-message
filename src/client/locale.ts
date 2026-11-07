@@ -90,6 +90,7 @@ export const EN: Record<string, string> = {
   '三路上报': 'Reported',
   '运行统计': 'Run stats',
   '轮询历史': 'Poll history',
+  '最近 5 轮': 'Last 5 polls',
   '待评审 PR': 'Review requests',
   '新 Issue': 'New issues',
   '@ 提醒': '@ mentions',
@@ -113,8 +114,6 @@ export const EN: Record<string, string> = {
 
   '核心信号': 'Core signals',
   '总数': 'Total',
-  '按状态': 'By state',
-  '按类型': 'By kind',
   '未找到超级助理数据库（dsh-my-superagent 未安装或尚未启动）':
     'Superagent database not found (dsh-my-superagent is not installed or not started)',
   '还没有落库信号': 'No signals stored yet',
