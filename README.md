@@ -79,7 +79,7 @@ Cordis patch 里的 `intervalMs` / `repos`。要恢复 patch 默认值，删除�
 | --- | --- | --- | --- |
 | `code-review.requested` | `github:<owner>/<repo>/pull/<n>` | `review:<repo>#<n>:<headSha>` | PR 请求我（或团队）评审 |
 | `github.issue.opened` | `github:<owner>/<repo>/issues/<n>` | `issue:<repo>#<n>` | 维护仓库有新 Issue |
-| `github.mention` | `github:<owner>/<repo>/issues/<n>` | `mention:<repo>#<n>:<commentId>` | Issue/PR/评论里 @ 我或团队 |
+| `github.mention` | `github:<owner>/<repo>/issues/<n>` | `mention:<repo>#<n>:<commentId|body>` | Issue/PR/评论里 @ 我或团队 |
 
 - `repo` 在事件键中小写归一化，展示保留 GitHub 返回的大小写。
 - 所有外部文本去控制字符、压成单行并按字段截断；`links` 只放 `https://github.com/...`。
@@ -88,7 +88,7 @@ Cordis patch 里的 `intervalMs` / `repos`。要恢复 patch 默认值，删除�
 
 ## 去重
 
-1. **事件键**：PR 用 head SHA，Issue 用编号，@ 用 comment id（没有 id 时用 `updated_at`）。
+1. **事件键**：PR 用 head SHA，Issue 用编号，@ 用 comment id（没有 id 时用固定的 `body` 标记）。
 2. **本轮内**：同一个事件键只 emit 一次。
 3. **跨轮询**：核心按 `(source, sourceEventId)` 幂等吸收；插件再把已接受的键写进 `seen.json`，重启后也不会重报。
 4. **来源关闭**：`emit` 返回 `source-disabled` 时不写 `seen`，下一轮自动重试。

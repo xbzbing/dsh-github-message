@@ -54,7 +54,7 @@ dsh-my-superagent  sources.register({ id: 'github-message', trust: 'external', k
 | --- | --- | --- |
 | `code-review.requested` | `github:<owner>/<repo>/pull/<n>` | `review:<repo>#<n>:<headSha>` |
 | `github.issue.opened` | `github:<owner>/<repo>/issues/<n>` | `issue:<repo>#<n>` |
-| `github.mention` | `github:<owner>/<repo>/issues/<n>` | `mention:<repo>#<n>:<commentId>` |
+| `github.mention` | `github:<owner>/<repo>/issues/<n>` | `mention:<repo>#<n>:<commentId|body>` |
 
 - `repo` 在事件键中小写归一化，展示用 GitHub 返回的原始大小写。
 - 所有外部文本先去控制字符、压成单行、按字段截断；链接只接受 `https://github.com/...`。

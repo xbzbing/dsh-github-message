@@ -35,7 +35,7 @@
 | --- | --- | --- | --- | --- |
 | `code-review.requested` | `github:<owner>/<repo>/pull/<n>` | `review:<owner>/<repo>#<n>:<headSha>` | PR 请求我（或我所在团队）评审 | 提醒「需要你评审」，附「开始评审 / 忽略」；开始后走评审任务 |
 | `github.issue.opened` | `github:<owner>/<repo>/issues/<n>` | `issue:<owner>/<repo>#<n>` | 我维护的仓库有新 Issue | 提醒「有新 Issue」，附「开始分析 / 忽略」；开始后走 Issue 分析任务 |
-| `github.mention` | `github:<owner>/<repo>/issues/<n>` | `mention:<owner>/<repo>#<n>:<commentId 或 updatedAt>` | 有人在 Issue/PR/评论里 @ 我或我所在团队 | 提醒「有人 @ 你」，附链接与摘要；默认不建任务 |
+| `github.mention` | `github:<owner>/<repo>/issues/<n>` | `mention:<owner>/<repo>#<n>:<commentId 或 body>` | 有人在 Issue/PR/评论里 @ 我或我所在团队 | 提醒「有人 @ 你」，附链接与摘要；默认不建任务 |
 
 ### 示例
 
@@ -206,7 +206,7 @@ interface Notice {
 - 只处理 Issue/PR 类型的通知；Discussion、Commit 等先跳过，避免用错对象的 URL 与正文。
 - 交付：标题「`repo #n` 有人 @ 你」，正文含评论摘要（转义、截断）、作者、链接。
 - 默认 `action`（立即提醒，不并入摘要）；免打扰/每小时上限由现有注意力调度处理。
-- 去重键：`mention:<repo>#<n>:<commentId>`；同一条评论只提醒一次。
+- 去重键：`mention:<repo>#<n>:<commentId>`；没有评论 id 时用固定 `body`；同一条评论/正文只提醒一次。
 - 不建任务、不写回；若要「回复」由主人自己在 GitHub 处理。
 - 团队 @ 的成员校验：如果正文只出现团队名，核心需要查团队成员；查不到就降级为「团队被 @」并提示，不要伪造。
 
