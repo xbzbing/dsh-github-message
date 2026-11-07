@@ -24,6 +24,7 @@ export function githubUrl(value: unknown): string | undefined {
   }
   if (url.protocol !== 'https:') return undefined;
   if (url.hostname !== 'github.com' && url.hostname !== 'www.github.com') return undefined;
+  if (url.username !== '' || url.password !== '' || url.port !== '') return undefined;
   return url.toString();
 }
 
