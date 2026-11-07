@@ -338,14 +338,14 @@ export async function fetchIssueCandidates(
   const result = emptyResult<IssueCandidate>();
   if (options.repos.length === 0) return result;
   const perPage = Math.min(100, options.maxResults);
-  let budget = options.maxResults;
+  const collected: IssueCandidate[] = [];
 
   for (const repo of options.repos) {
-    if (budget <= 0) break;
     if (splitRepo(repo) === undefined) {
       result.skipped += 1;
       continue;
     }
+    let repoCount = 0;
     const query = issueQuery(repo, options.sinceMs);
     for (let page = 1; page <= options.maxPages; page += 1) {
       let items: unknown[];
@@ -361,7 +361,7 @@ export async function fetchIssueCandidates(
       result.fetched += items.length;
 
       for (const raw of items) {
-        if (budget <= 0) break;
+        if (repoCount >= options.maxResults) break;
         const item = parseSearchItem(raw);
         if (item === undefined) {
           result.skipped += 1;
@@ -375,7 +375,7 @@ export async function fetchIssueCandidates(
           result.filtered += 1;
           continue;
         }
-        result.candidates.push({
+        collected.push({
           repo: item.repo,
           number: item.number,
           title: item.title,
@@ -384,13 +384,18 @@ export async function fetchIssueCandidates(
           createdAt: item.createdAt,
           url: item.url ?? `https://github.com/${item.repo}/issues/${item.number}`,
         });
-        budget -= 1;
+        repoCount += 1;
       }
 
       if (items.length < perPage) break;
+      if (repoCount >= options.maxResults) break;
       if (page * perPage >= Math.min(totalCount, 1000)) break;
     }
   }
 
+  // 每个仓库都先取自己的候选，再按创建时间归并，避免第一个仓库占满全局预算。
+  result.candidates = collected
+    .sort((left, right) => right.createdAt - left.createdAt)
+    .slice(0, options.maxResults);
   return result;
 }

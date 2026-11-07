@@ -152,6 +152,29 @@ test('issue 单个仓库失败不影响其他仓库', async () => {
   assert.equal(result.fetched, 1);
 });
 
+test('issue 多仓库按创建时间归并，不被第一个仓库占满预算', async () => {
+  const gh = new FakeGh((request) => {
+    const query = String(request.params?.q ?? '');
+    if (query.startsWith('repo:o/one')) {
+      return searchPage([
+        issueSearchItem({ repository_url: 'https://api.github.com/repos/o/one', number: 1, created_at: '2026-11-02T00:00:00Z' }),
+        issueSearchItem({ repository_url: 'https://api.github.com/repos/o/one', number: 2, created_at: '2026-11-03T00:00:00Z' }),
+      ]);
+    }
+    return searchPage([
+      issueSearchItem({ repository_url: 'https://api.github.com/repos/o/two', number: 3, created_at: '2026-11-06T00:00:00Z' }),
+    ]);
+  });
+  const result = await fetchIssueCandidates(gh, {
+    repos: ['o/one', 'o/two'],
+    sinceMs: 0,
+    maxResults: 2,
+    maxPages: 1,
+    timeoutMs: 1_000,
+  });
+  assert.deepEqual(result.candidates.map((item) => item.number), [3, 2]);
+});
+
 test('坏记录计入 skipped，不中断整页', async () => {
   const gh = new FakeGh(() => searchPage([
     { number: 'x', repository_url: 'https://api.github.com/repos/o/r' },
