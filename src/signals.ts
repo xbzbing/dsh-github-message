@@ -106,7 +106,8 @@ export function mentionDraft(mention: MentionCandidate): SignalDraft {
   const repo = mention.repo.slice(0, 200);
   const title = cleanText(mention.title, MAX_TITLE);
   const excerpt = cleanText(mention.excerpt, MAX_EXCERPT);
-  const suffix = mention.commentId ?? new Date(stamp(mention.occurredAt)).toISOString();
+  // 没有评论 id 时用稳定的 body 标记，避免正文每次编辑都生成新事件。
+  const suffix = mention.commentId ?? 'body';
   const draft: SignalDraft = {
     sourceEventId: `mention:${repoKey(repo)}#${mention.number}:${suffix}`.slice(0, MAX_EVENT_ID),
     kind: KIND_MENTION,

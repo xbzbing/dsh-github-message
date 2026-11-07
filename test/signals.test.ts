@@ -43,7 +43,7 @@ test('issue 信号：标签清洗与非法链接不输出', () => {
   assert.equal(draft.links, undefined);
 });
 
-test('mention 信号：评论 id 与无 id 时的时间后缀', () => {
+test('mention 信号：评论 id 与无 id 时的 body 兜底', () => {
   const withId = mentionDraft({
     repo: 'o/r',
     number: 5,
@@ -74,6 +74,6 @@ test('mention 信号：评论 id 与无 id 时的时间后缀', () => {
     reason: 'team_mention',
     via: 'notifications',
   });
-  assert.equal(withoutId.sourceEventId, 'mention:o/r#5:2026-11-07T09:00:00.000Z');
+  assert.equal(withoutId.sourceEventId, 'mention:o/r#5:body');
   assert.equal(withoutId.payload?.commentId, null);
 });
