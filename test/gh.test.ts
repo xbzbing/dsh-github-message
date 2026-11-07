@@ -64,7 +64,8 @@ test('非 HTTP 输出归类为 invalid-output', () => {
 test('错误分类覆盖认证、404、限流、网络', () => {
   assert.equal(classifyGhFailure('gh: Bad credentials (HTTP 401)', 1).kind, 'unauthenticated');
   assert.equal(classifyGhFailure('gh: Not Found (HTTP 404)', 1).kind, 'not-found');
-  assert.equal(classifyGhFailure('gh: API rate limit exceeded for user (HTTP 403)', 1).kind, 'forbidden');
+  assert.equal(classifyGhFailure('gh: API rate limit exceeded for user (HTTP 403)', 1).kind, 'rate-limited');
+  assert.equal(classifyGhFailure('gh: slow down (HTTP 429)', 1).kind, 'rate-limited');
   assert.equal(classifyGhFailure('gh: API rate limit exceeded', 1).kind, 'rate-limited');
   assert.equal(classifyGhFailure('gh: Could not resolve host: api.github.com', 1).kind, 'network');
   assert.equal(classifyGhFailure('something odd', 2).kind, 'other');

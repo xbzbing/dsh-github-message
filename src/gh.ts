@@ -84,8 +84,9 @@ export function classifyGhFailure(stderr: string, exitCode: number | null): GhEr
   if (status === 401 || AUTH.test(detail)) return new GhError('unauthenticated', detail, status ?? 401);
   if (status === 404 || NOT_FOUND.test(detail)) return new GhError('not-found', detail, status ?? 404);
   if (status === 422 || INVALID.test(detail)) return new GhError('invalid', detail, status ?? 422);
+  // 限流也可能以 403 返回；先于 forbidden 判断，轮询层才能按限流退避。
+  if (status === 429 || RATE_LIMIT.test(detail)) return new GhError('rate-limited', detail, status ?? 429);
   if (status === 403 || FORBIDDEN.test(detail)) return new GhError('forbidden', detail, status ?? 403);
-  if (RATE_LIMIT.test(detail)) return new GhError('rate-limited', detail, status);
   if (NETWORK.test(detail)) return new GhError('network', detail, status);
   return new GhError('other', detail, status);
 }
