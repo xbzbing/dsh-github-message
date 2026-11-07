@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": false,
+    "sourceMap": false,
+    "allowJs": false,
+    // host 半只在 Node 里跑，不能继承根 tsconfig 的 DOM。
+    "lib": ["ES2023"],
+    "outDir": "lib",
+    "rootDir": "."
+  },
+  "include": ["index.ts", "src"],
+  "exclude": ["src/client", "test"]
+}

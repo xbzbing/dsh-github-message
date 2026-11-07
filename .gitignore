@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build output (not committed; build with `npm run build`)
+lib/
+*.tsbuildinfo
+
+# Local runtime state / logs
+*.log
+*.log.*
+*.tmp
+seen.json
+.poll.log
+
+# Test / coverage artifacts
+coverage/
+.nyc_output/
+test-results/
+
+# Package artifacts
+*.tgz
+
+# Local secrets and environment
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Cache
+.cache/
+.eslintcache

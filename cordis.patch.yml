@@ -1,0 +1,9 @@
+# dsh-github-message 的插件层：装到 profile 后自动插入这一个条目。
+- insert:
+    - id: dsh-github-message
+      name: dsh-github-message
+      # 默认 5 分钟检查一次。要调整时在 profile 的 cordis.patch.yml 里用同一个
+      # id 追加 config；patch 的 config 是整体替换，请把要保留的键都写上。
+      config:
+        intervalMs: 300000
+        repos: []

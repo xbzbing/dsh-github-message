@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "GitHub 消息",
+    "description": "只读轮询待我评审的 PR、维护仓库的新 Issue 与 @ 提醒，按 my-superagent/v1 上报信号，并在 DSH 里显示登录、仓库、周期与三路统计。"
+  }
+}
