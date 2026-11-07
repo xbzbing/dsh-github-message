@@ -18,12 +18,10 @@ export const KIND_MENTION = 'github.mention';
 export const KINDS = [KIND_REVIEW, KIND_ISSUE, KIND_MENTION] as const;
 
 /**
- * 核心声明的可选能力。缺这个 feature 时插件只采集不 emit，避免核心尚未支持
- * `github:` subject 时先把事实写进 seen、等核心升级后反而漏报。
+ * 核心声明的可选能力。旧核心缺这个 feature 时插件只采集不 emit，
+ * 避免先把事实写进 seen、等核心升级后反而漏报。
  */
 export const REQUIRED_FEATURE = 'github-source';
-
-export const CORE_ISSUE_URL = 'https://github.com/xbzbing/dsh-my-superagent/issues/1';
 
 /** 设置页槽位与插件页包配置槽位。 */
 export const SLOT_NAME = 'settings.section';

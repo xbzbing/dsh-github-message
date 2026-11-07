@@ -97,7 +97,6 @@ export interface Status {
     trust?: string;
     featureSupported?: boolean;
     requiredFeature?: string;
-    coreIssueUrl?: string;
     state?: string;
   };
   config?: {
@@ -198,7 +197,7 @@ export function reminderNote(t: Translate, reminders: Reminders | undefined): st
   switch (reminders.code) {
     case 'db-missing': return t('未找到超级助理数据库（dsh-my-superagent 未安装或尚未启动）');
     case 'empty': return t('还没有落库信号');
-    case 'ok': return t('ignored 表示核心尚未回源确认；admitted/digested 才会进入通知链路');
+    case 'ok': return t('ignored 表示回源未通过或来源关闭；admitted/digested 才会进入通知链路');
     case 'read-failed': return t('读取超级助理信号失败：{error}', { error: reminders.detail ?? '' });
     default: return reminders.note ?? '';
   }
@@ -240,35 +239,37 @@ export function kindTable(t: Translate, stats: Stats | undefined): unknown {
     h('td', null, h('strong', null, formatNumber(stats?.filtered))),
     h('td', null, h('strong', null, formatNumber(stats?.deferred))),
     h('td', null, h('strong', null, formatNumber(stats?.errors)))));
-  return h('table', { className: 'icm-table icm-table--stats' },
-    h('thead', null, h('tr', null,
-      h('th', null, t('类型')),
-      h('th', null, t('上报')),
-      h('th', null, t('去重')),
-      h('th', null, t('过滤')),
-      h('th', null, t('待上报')),
-      h('th', null, t('错误')))),
-    h('tbody', null, ...rows));
+  return h('div', { className: 'icm-table-wrap' },
+    h('table', { className: 'icm-table icm-table--stats' },
+      h('thead', null, h('tr', null,
+        h('th', null, t('类型')),
+        h('th', null, t('上报')),
+        h('th', null, t('去重')),
+        h('th', null, t('过滤')),
+        h('th', null, t('待上报')),
+        h('th', null, t('错误')))),
+      h('tbody', null, ...rows)));
 }
 
 export function historyTable(t: Translate, history: Summary[]): unknown {
   if (history.length === 0) return h('p', { className: 'icm-note' }, t('还没有轮询记录'));
   const rows = history.slice(-5).reverse();
-  return h('table', { className: 'icm-table' },
-    h('thead', null, h('tr', null,
-      h('th', null, t('时间')),
-      h('th', null, t('待评审 PR')),
-      h('th', null, t('新 Issue')),
-      h('th', null, t('@ 提醒')),
-      h('th', null, t('去重')),
-      h('th', null, t('错误')))),
-    h('tbody', null, ...rows.map((item, index) => h('tr', { key: `${item.at ?? 'row'}-${index}` },
-      h('td', null, formatTime(item.at)),
-      h('td', null, formatNumber(item.review?.emitted)),
-      h('td', null, formatNumber(item.issue?.emitted)),
-      h('td', null, formatNumber(item.mention?.emitted)),
-      h('td', null, formatNumber(item.duplicates)),
-      h('td', null, formatNumber(item.errors?.length))))));
+  return h('div', { className: 'icm-table-wrap' },
+    h('table', { className: 'icm-table' },
+      h('thead', null, h('tr', null,
+        h('th', null, t('时间')),
+        h('th', null, t('待评审 PR')),
+        h('th', null, t('新 Issue')),
+        h('th', null, t('@ 提醒')),
+        h('th', null, t('去重')),
+        h('th', null, t('错误')))),
+      h('tbody', null, ...rows.map((item, index) => h('tr', { key: `${item.at ?? 'row'}-${index}` },
+        h('td', null, formatTime(item.at)),
+        h('td', null, formatNumber(item.review?.emitted)),
+        h('td', null, formatNumber(item.issue?.emitted)),
+        h('td', null, formatNumber(item.mention?.emitted)),
+        h('td', null, formatNumber(item.duplicates)),
+        h('td', null, formatNumber(item.errors?.length)))))));
 }
 
 export function coreSignalRows(t: Translate, reminders: Reminders | undefined): unknown[] {

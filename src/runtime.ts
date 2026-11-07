@@ -9,7 +9,6 @@ import {
   type ResolvedConfig,
 } from './config.ts';
 import {
-  CORE_ISSUE_URL,
   HOST_CONTRACT,
   KINDS,
   PACKAGE_NAME,
@@ -82,7 +81,6 @@ export interface StatusSnapshot {
     trust: 'external';
     featureSupported: boolean;
     requiredFeature: string;
-    coreIssueUrl: string;
     state: SourceState;
   };
   config: {
@@ -436,7 +434,6 @@ export class GithubMessageRuntime {
         trust: 'external',
         featureSupported: this.featureSupported,
         requiredFeature: REQUIRED_FEATURE,
-        coreIssueUrl: CORE_ISSUE_URL,
         state: this.sourceState(),
       },
       config: {

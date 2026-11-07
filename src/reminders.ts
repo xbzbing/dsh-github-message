@@ -1,5 +1,5 @@
 // 超级助理信号统计：只读打开 dsh-my-superagent 的 SQLite，读不到就降级。
-// 核心支持 github-source 之前，外部来源信号会停在 state='new' 或 'ignored'。
+// 旧核心未支持 github-source 时，外部来源信号会停在 state='new' 或 'ignored'。
 
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -64,7 +64,7 @@ export function readCoreSignals(
         code: total === 0 ? 'empty' : 'ok',
         note: total === 0
           ? '还没有落库信号'
-          : 'ignored 表示核心尚未回源确认；admitted/digested 才会进入通知链路',
+          : 'ignored 表示回源未通过或来源关闭；admitted/digested 才会进入通知链路',
       };
     } finally {
       db.close();

@@ -47,10 +47,11 @@ export const EN: Record<string, string> = {
 
   '核心能力': 'Core capability',
   '核心已支持 GitHub 来源': 'Core supports GitHub sources',
-  '核心尚未支持 GitHub 来源': 'Core does not support GitHub sources yet',
-  '当前只采集候选，不向核心上报，也不会写入去重状态。核心支持后重新加载插件即可补齐。':
-    'Candidates are collected but not reported, and nothing is marked as seen. After the core adds support, reload the plugin to catch up.',
-  '查看核心提案': 'View core proposal',
+  '核心缺少 GitHub 来源能力': 'Core lacks GitHub source support',
+  '信号会经核心回源确认后进入通知链路；来源关闭时不会落库。':
+    'Signals enter the notification path after core-side source verification; nothing is stored while the source is off.',
+  '当前核心缺少 github-source 能力，插件只采集候选、不向核心上报。升级 dsh-my-superagent 后重新加载插件即可补齐。':
+    'This core lacks github-source support; the plugin only collects candidates and does not report them. Upgrade dsh-my-superagent and reload the plugin to catch up.',
   '来源状态': 'Source state',
   '运行中': 'Running',
   '采集但不推送': 'Collecting only',
@@ -74,17 +75,21 @@ export const EN: Record<string, string> = {
   '信任级别': 'Trust',
   '类型': 'Kind',
 
+  '轮询配置': 'Polling settings',
   '检查周期': 'Check interval',
   '当前周期：{interval}': 'Current: {interval}',
   '下一轮：{time}': 'Next poll: {time}',
   '检查周期（分钟）': 'Check interval (minutes)',
-  '可设置 {min} 到 {max} 分钟，默认 5 分钟。': 'Between {min} and {max} minutes; default 5 minutes.',
+  '可设置 {min} 到 {max} 分钟，默认 5 分钟；实际间隔不会短于 GitHub 的 X-Poll-Interval。':
+    'Between {min} and {max} minutes; default 5 minutes. The effective interval is never shorter than GitHub X-Poll-Interval.',
   '保存周期': 'Save interval',
   '已保存检查周期：{minutes} 分钟': 'Interval saved: {minutes} minutes',
   '检查周期必须是数字': 'Interval must be a number',
   '检查周期需在 {min} 到 {max} 分钟之间': 'Interval must be between {min} and {max} minutes',
 
-  '三路统计': 'Per-stream stats',
+  '三路上报': 'Reported',
+  '运行统计': 'Run stats',
+  '轮询历史': 'Poll history',
   '待评审 PR': 'Review requests',
   '新 Issue': 'New issues',
   '@ 提醒': '@ mentions',
@@ -113,8 +118,8 @@ export const EN: Record<string, string> = {
   '未找到超级助理数据库（dsh-my-superagent 未安装或尚未启动）':
     'Superagent database not found (dsh-my-superagent is not installed or not started)',
   '还没有落库信号': 'No signals stored yet',
-  'ignored 表示核心尚未回源确认；admitted/digested 才会进入通知链路':
-    'ignored means the core has not verified the signal yet; only admitted/digested enter notifications',
+  'ignored 表示回源未通过或来源关闭；admitted/digested 才会进入通知链路':
+    'ignored means verification failed or the source is off; only admitted/digested enter notifications',
   '读取超级助理信号失败：{error}': 'Failed to read superagent signals: {error}',
 
   '插件只读 GitHub，不评审、不评论、不写回；评审与 Issue 分析由超级助理完成。':

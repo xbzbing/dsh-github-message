@@ -1,4 +1,4 @@
-// GitHub 消息设置页：登录、核心能力、维护仓库、检查周期、三路统计与核心信号。
+// GitHub 消息设置页：登录、核心能力、轮询配置、运行统计与核心信号。
 // 只用 React.createElement，不引入宿主私有原语。
 
 import * as React from 'react';
@@ -56,6 +56,12 @@ function ensureStyles(): void {
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function metric(label: string, value: string, tone?: string): unknown {
+  return h('div', { className: 'icm-metric', ...(tone === undefined ? {} : { 'data-tone': tone }) },
+    h('span', { className: 'icm-metric-label' }, label),
+    h('strong', { className: 'icm-metric-value' }, value));
 }
 
 export function GithubMessagePanel(props: Props): unknown {
@@ -221,8 +227,14 @@ export function GithubMessagePanel(props: Props): unknown {
       t('面板与后台版本不一致，请卸载后重新安装插件。')) : null,
     notice !== '' ? h('div', { className: 'icm-banner', role: 'status' }, notice) : null,
 
+    h('div', { className: 'icm-overview' },
+      metric(t('三路上报'), formatNumber(stats?.emitted)),
+      metric(t('待上报'), formatNumber(stats?.deferred)),
+      metric(t('错误'), formatNumber(stats?.errors), (stats?.errors ?? 0) > 0 ? 'danger' : undefined),
+      metric(t('核心信号'), formatNumber(reminders?.total))),
+
     h('div', { className: 'icm-grid' },
-      h('section', { className: 'icm-card' },
+      h('section', { className: 'icm-card icm-card--primary' },
         h('div', { className: 'icm-card-head' },
           h('h3', null, t('GitHub 登录')),
           h('span', { className: 'icm-pill', 'data-tone': apiTone(login) }, apiLabel(t, login))),
@@ -247,19 +259,14 @@ export function GithubMessagePanel(props: Props): unknown {
             onClick: () => void run('login.check', t('登录检查完成')),
           }, busy === 'login.check' ? t('检查中…') : t('检查登录')))),
 
-      h('section', { className: 'icm-card' },
+      h('section', { className: 'icm-card icm-card--secondary' },
         h('div', { className: 'icm-card-head' },
           h('h3', null, t('核心能力')),
           h('span', { className: 'icm-pill', 'data-tone': featureSupported ? 'success' : 'warning' },
-            featureSupported ? t('核心已支持 GitHub 来源') : t('核心尚未支持 GitHub 来源'))),
-        featureSupported
-          ? h('p', { className: 'icm-note' }, t('来源状态'), `：${sourceLabel(t, source?.state)}`)
-          : h('p', { className: 'icm-note' },
-            t('当前只采集候选，不向核心上报，也不会写入去重状态。核心支持后重新加载插件即可补齐。')),
-        !featureSupported && source?.coreIssueUrl !== undefined
-          ? h('p', { className: 'icm-hint' },
-            h('a', { href: source.coreIssueUrl, target: '_blank', rel: 'noreferrer' }, t('查看核心提案')))
-          : null,
+            featureSupported ? t('核心已支持 GitHub 来源') : t('核心缺少 GitHub 来源能力'))),
+        h('p', { className: 'icm-note' }, featureSupported
+          ? t('信号会经核心回源确认后进入通知链路；来源关闭时不会落库。')
+          : t('当前核心缺少 github-source 能力，插件只采集候选、不向核心上报。升级 dsh-my-superagent 后重新加载插件即可补齐。')),
         h('dl', { className: 'icm-kv' },
           row(t('来源状态'), sourceLabel(t, source?.state)),
           row(t('来源'), source?.id ?? '—'),
@@ -268,70 +275,74 @@ export function GithubMessagePanel(props: Props): unknown {
         h('p', { className: 'icm-hint' },
           t('来源在超级助理的「来源」页关闭时，信号不会落库；打开后下一轮自动补齐。'))),
 
-      h('section', { className: 'icm-card' },
-        h('h3', null, t('维护仓库')),
-        h('p', { className: 'icm-note' },
-          t('每行一个 owner/repo，最多 {max} 个。新 Issue 只提醒这些仓库。', {
-            max: config?.maxRepos ?? 10,
-          })),
-        h('label', { className: 'icm-field' },
-          h('span', null, t('仓库列表')),
-          h('textarea', {
-            className: 'icm-textarea',
-            rows: 6,
-            spellCheck: false,
-            value: reposDraft,
-            placeholder: 'owner/repo',
-            onChange: (event: { target: { value: string } }) => {
-              dirtyRepos.current = true;
-              setReposDraft(event.target.value);
-            },
-          })),
-        h('div', { className: 'icm-actions' },
-          h('button', {
-            type: 'button',
-            className: 'icm-btn icm-btn--primary',
-            disabled: busy !== '',
-            onClick: () => void saveRepos(),
-          }, busy === 'config.set' ? t('保存中…') : t('保存仓库')))),
-
-      h('section', { className: 'icm-card' },
-        h('h3', null, t('检查周期')),
-        h('p', { className: 'icm-note' },
-          t('当前周期：{interval}', { interval: formatInterval(config?.intervalMs, t) }),
-          ' · ',
-          t('下一轮：{time}', { time: formatTime(status?.poll?.nextPollAt) })),
-        backoff > 0
-          ? h('p', { className: 'icm-hint' }, `${t('失败')} · ${formatInterval(backoff, t)}`)
-          : null,
-        h('label', { className: 'icm-field' },
-          h('span', null, t('检查周期（分钟）')),
-          h('input', {
-            className: 'icm-input',
-            type: 'number',
-            min: MIN_CLIENT_INTERVAL_MINUTES,
-            max: MAX_CLIENT_INTERVAL_MINUTES,
-            step: 1,
-            value: intervalDraft,
-            onChange: (event: { target: { value: string } }) => {
-              dirtyInterval.current = true;
-              setIntervalDraft(event.target.value);
-            },
-          })),
-        h('p', { className: 'icm-hint' }, t('可设置 {min} 到 {max} 分钟，默认 5 分钟。', {
-          min: MIN_CLIENT_INTERVAL_MINUTES,
-          max: MAX_CLIENT_INTERVAL_MINUTES,
-        })),
-        h('div', { className: 'icm-actions' },
-          h('button', {
-            type: 'button',
-            className: 'icm-btn icm-btn--primary',
-            disabled: busy !== '',
-            onClick: () => void saveInterval(),
-          }, busy === 'config.set' ? t('保存中…') : t('保存周期')))),
+      h('section', { className: 'icm-card icm-card--wide' },
+        h('div', { className: 'icm-card-head' },
+          h('h3', null, t('轮询配置'))),
+        h('div', { className: 'icm-config-grid' },
+          h('div', { className: 'icm-config-block' },
+            h('h4', null, t('维护仓库')),
+            h('p', { className: 'icm-note' },
+              t('每行一个 owner/repo，最多 {max} 个。新 Issue 只提醒这些仓库。', {
+                max: config?.maxRepos ?? 10,
+              })),
+            h('label', { className: 'icm-field' },
+              h('span', null, t('仓库列表')),
+              h('textarea', {
+                className: 'icm-textarea',
+                rows: 5,
+                spellCheck: false,
+                value: reposDraft,
+                placeholder: 'owner/repo',
+                onChange: (event: { target: { value: string } }) => {
+                  dirtyRepos.current = true;
+                  setReposDraft(event.target.value);
+                },
+              })),
+            h('div', { className: 'icm-actions' },
+              h('button', {
+                type: 'button',
+                className: 'icm-btn icm-btn--primary',
+                disabled: busy !== '',
+                onClick: () => void saveRepos(),
+              }, busy === 'config.set' ? t('保存中…') : t('保存仓库')))),
+          h('div', { className: 'icm-config-block' },
+            h('h4', null, t('检查周期')),
+            h('p', { className: 'icm-note' },
+              t('当前周期：{interval}', { interval: formatInterval(config?.intervalMs, t) }),
+              ' · ',
+              t('下一轮：{time}', { time: formatTime(status?.poll?.nextPollAt) })),
+            backoff > 0
+              ? h('p', { className: 'icm-hint' }, `${t('失败')} · ${formatInterval(backoff, t)}`)
+              : null,
+            h('label', { className: 'icm-field' },
+              h('span', null, t('检查周期（分钟）')),
+              h('input', {
+                className: 'icm-input',
+                type: 'number',
+                min: MIN_CLIENT_INTERVAL_MINUTES,
+                max: MAX_CLIENT_INTERVAL_MINUTES,
+                step: 1,
+                value: intervalDraft,
+                onChange: (event: { target: { value: string } }) => {
+                  dirtyInterval.current = true;
+                  setIntervalDraft(event.target.value);
+                },
+              })),
+            h('p', { className: 'icm-hint' },
+              t('可设置 {min} 到 {max} 分钟，默认 5 分钟；实际间隔不会短于 GitHub 的 X-Poll-Interval。', {
+                min: MIN_CLIENT_INTERVAL_MINUTES,
+                max: MAX_CLIENT_INTERVAL_MINUTES,
+              })),
+            h('div', { className: 'icm-actions' },
+              h('button', {
+                type: 'button',
+                className: 'icm-btn icm-btn--primary',
+                disabled: busy !== '',
+                onClick: () => void saveInterval(),
+              }, busy === 'config.set' ? t('保存中…') : t('保存周期')))))),
 
       h('section', { className: 'icm-card icm-card--wide' },
-        h('h3', null, t('三路统计')),
+        h('h3', null, t('运行统计')),
         kindTable(t, stats),
         h('div', { className: 'icm-split' },
           h('div', null,
@@ -348,7 +359,7 @@ export function GithubMessagePanel(props: Props): unknown {
               row(t('总数'), formatNumber(reminders?.total)),
               ...coreSignalRows(t, reminders)),
             h('p', { className: 'icm-note' }, reminderNote(t, reminders)))),
-        h('h4', { style: { marginTop: '16px' } }, t('最近轮询')),
+        h('h4', { style: { marginTop: '16px' } }, t('轮询历史')),
         historyTable(t, stats?.history ?? []),
         h('div', { className: 'icm-actions' },
           h('button', {
