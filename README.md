@@ -7,7 +7,7 @@
 - 只做**采集 → 翻译 → 上报**；评审、Issue 分析、评论/写回、是否打扰主人全部由 `dsh-my-superagent` 完成。
 - 三类信号都以 `trust: 'external'` 注册，核心回源确认后才采纳。
 - 默认每 **5 分钟**检查一次；同一 PR 的同一 head SHA、同一 Issue、同一条评论只上报一次。
-- 核心尚未支持 `github:` subject 时进入 dry-run：照常采集候选，但不向核心上报、不写去重状态。
+- 当前核心 P1 已支持 `github:` subject（`github-source`）；旧核心缺少该能力时进入 dry-run：照常采集候选，但不向核心上报、不写去重状态。
 
 ## 前置条件
 
@@ -62,10 +62,10 @@ dsh plugin --profile web add file:/Users/ankh/workspace/private/dsh-plugins/dsh-
 client 半注册在 `settings.section` 和 `plugins.bundle.config` 两个槽位，文案跟随 DSH 语言设置：
 
 - **GitHub 登录**：账号、token 来源、scopes、通知权限、API 探测结果；点「检查登录」立即重查。
-- **核心能力**：核心是否声明 `github-source`。缺失时显示 issue #1 链接，并说明当前只采集、不推送。
+- **核心能力**：核心是否声明 `github-source`。当前核心 P1 已支持；旧版本缺失时提示升级并进入 dry-run。
 - **维护仓库**：每行一个 `owner/repo`，保存后立即生效；issue 流只提醒这些仓库。
 - **检查周期**：当前周期、下一轮时间、失败退避；按分钟修改并保存。
-- **三路统计**：review / issue / mention 各自的上报、去重、过滤、待上报、错误；最近 5 轮摘要。
+- **运行统计**：顶部概览 + review / issue / mention 明细；最近 5 轮摘要。
 - **核心信号**：只读 `$DSH_HOME/dsh-my-superagent/state.sqlite`，按 kind/state 统计
   `source='github-message'` 的信号；读不到时降级提示。
 - **操作**：立即检查、重置统计。
@@ -92,7 +92,7 @@ Cordis patch 里的 `intervalMs` / `repos`。要恢复 patch 默认值，删除�
 2. **本轮内**：同一个事件键只 emit 一次。
 3. **跨轮询**：核心按 `(source, sourceEventId)` 幂等吸收；插件再把已接受的键写进 `seen.json`，重启后也不会重报。
 4. **来源关闭**：`emit` 返回 `source-disabled` 时不写 `seen`，下一轮自动重试。
-5. **dry-run**：核心未声明 `github-source` 时完全不 emit、不写 `seen`，核心升级后能补齐当前事实。
+5. **dry-run**：旧核心未声明 `github-source` 时完全不 emit、不写 `seen`，升级后能补齐当前事实。
 6. **mention 游标**：只有上一轮真正处理完（非 dry-run、来源已开启、无错误）才推进 `since`/ETag；否则用完整窗口重扫。
 
 ## 配置
@@ -139,13 +139,12 @@ Cordis patch 里的 `intervalMs` / `repos`。要恢复 patch 默认值，删除�
 
 插件注册时读取 `mySuperagent.protocol.features`：
 
-- 含 `github-source`：正常上报。
+- 含 `github-source`：正常上报。当前核心 P1 已实现（ADR-0036），真实信号可进入回源确认与通知链路。
 - 不含：进入 **dry-run**，面板显示「采集但不推送」，不 emit、不写 `seen`。
-  核心支持后重新加载插件即可补齐当前仍然符合条件的 review/issue/mention。
+  升级核心后重新加载插件即可补齐当前仍然符合条件的 review/issue/mention。
 
-核心侧的确认、通知与动作路由由
-[dsh-my-superagent issue #1](https://github.com/xbzbing/dsh-my-superagent/issues/1) 实现；
-这是核心的准入限制，不是本插件故障。
+核心侧 P1 已完成；后续 Issue 分析、评审任务与写回仍按
+[dsh-my-superagent issue #1](https://github.com/xbzbing/dsh-my-superagent/issues/1) 推进。
 
 ## 验证
 
@@ -181,7 +180,7 @@ DSH_SMOKE_REPOS=xbzbing/dsh-my-superagent node scripts/smoke.mjs
 | 面板「未安装 gh」 | 安装 GitHub CLI，确认 `gh --version` 可用 |
 | 「凭据失效」/ API 401 | `gh auth login` 后点「检查登录」 |
 | 通知权限「缺失」 | `gh auth refresh -s notifications`，或把 `mentionMode` 设为 `search` |
-| 核心能力「尚未支持」 | 核心 issue #1 尚未合入；插件保持 dry-run，不会误写 seen |
+| 核心能力提示「缺少 GitHub 来源」 | 核心版本过旧；升级 `dsh-my-superagent` 后重新加载插件，旧核心下插件保持 dry-run，不会误写 seen |
 | 来源状态「等待开启」 | 到超级助理的「来源」页打开 `github-message` |
 | 一直无候选 | 检查 `repos`、`windowMs`、`gh auth status`；看 `poll.log` 的 errors |
 | 轮询变慢 | 面板显示退避时间；通常是限流或网络错误，恢复后自动重置 |

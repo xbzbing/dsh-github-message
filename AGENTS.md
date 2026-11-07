@@ -17,7 +17,7 @@
 - [docs/plan/01-可行性研究与开发计划.md](docs/plan/01-可行性研究与开发计划.md)
 - [docs/plan/02-开发计划-三路提醒.md](docs/plan/02-开发计划-三路提醒.md)
 - [docs/adr/](docs/adr/)：重要决策记录
-- 核心改动提案：[dsh-my-superagent issue #1](https://github.com/xbzbing/dsh-my-superagent/issues/1)
+- 核心改动提案：[dsh-my-superagent issue #1](https://github.com/xbzbing/dsh-my-superagent/issues/1)（P1 已完成）
 
 本地调研、临时记录、个人脚本一律放 `docs/local/`（已 gitignore），不要入仓。
 
@@ -64,9 +64,9 @@ dsh-my-superagent  sources.register({ id: 'github-message', trust: 'external', k
 
 注册时读取 `mySuperagent.protocol.features`：
 
-- 含 `github-source`：正常上报。
-- 不含：进入 **dryRun**，照常采集和展示候选，但**不 emit、不写 seen**；面板提示核心尚未支持
-  并给出 issue #1 链接。这样核心升级后能补齐当前仍然符合条件的事实，不会因提前写 seen 而漏报。
+- 含 `github-source`：正常上报。当前核心 P1 已实现，真实信号可进入回源确认与通知链路。
+- 不含：进入 **dryRun**，照常采集和展示候选，但**不 emit、不写 seen**；面板提示升级核心。
+  这是旧核心的兼容兜底，避免核心升级后因提前写 seen 而漏报。
 
 ## 技术约束
 
@@ -110,6 +110,6 @@ gh api 'notifications?all=true&per_page=1' --include
 
 ## 已知依赖
 
-- 核心支持 `github:` subject 与 `github-source` feature 之前，信号不会进入通知链路；
-  这是核心侧的准入限制，不是插件故障。
+- 核心 P1 已支持 `github:` subject 与 `github-source` feature；旧核心仍会走 dry-run。
+  Issue 分析、评审任务与写回属于核心后续阶段，不是插件故障。
 - 面板的「核心信号」统计只读 `$DSH_HOME/dsh-my-superagent/state.sqlite`，读不到就降级。
