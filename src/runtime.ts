@@ -27,7 +27,7 @@ import {
   type SourceHandleLike,
 } from './poller.ts';
 import { readCoreSignals, type CoreSignalStats } from './reminders.ts';
-import { saveRuntimeConfig } from './runtime-config.ts';
+import { loadRuntimeConfig, saveRuntimeConfig } from './runtime-config.ts';
 import { emptyStats, loadStats, recordStats, saveStats, type PollStats } from './stats.ts';
 import { SeenStore } from './state.ts';
 
@@ -346,7 +346,14 @@ export class GithubMessageRuntime {
 
     const changedInterval = intervalMs !== this.config.intervalMs;
     this.config = { ...this.config, intervalMs, repos: [...repos] };
-    saveRuntimeConfig(this.config.runtimeConfigFile, { intervalMs, repos: [...repos] }, this.logger);
+    // 只持久化用户这次真正改过的字段，避免保存周期时把 patch 里的仓库列表一起钉死。
+    const update: { intervalMs?: number; repos?: string[] } = {};
+    if (input.intervalMs !== undefined) update.intervalMs = intervalMs;
+    if (input.repos !== undefined) update.repos = [...repos];
+    if (update.intervalMs !== undefined || update.repos !== undefined) {
+      const existing = loadRuntimeConfig(this.config.runtimeConfigFile, this.logger);
+      saveRuntimeConfig(this.config.runtimeConfigFile, { ...existing, ...update }, this.logger);
+    }
     if (this.started && changedInterval) this.schedule();
     return this.status();
   }

@@ -242,6 +242,16 @@ test('setConfig 保存周期与仓库，校验非法值', async (t) => {
     assert.equal(saved.intervalMs, 120_000);
     assert.deepEqual(saved.repos, ['o/r', 'o/two']);
 
+    runtime.setConfig({ intervalMs: 180_000 });
+    const afterInterval = JSON.parse(readFileSync(join(dir, 'config.json'), 'utf8')) as { intervalMs?: number; repos?: string[] };
+    assert.equal(afterInterval.intervalMs, 180_000);
+    assert.deepEqual(afterInterval.repos, ['o/r', 'o/two']);
+
+    runtime.setConfig({ repos: ['o/three'] });
+    const afterRepos = JSON.parse(readFileSync(join(dir, 'config.json'), 'utf8')) as { intervalMs?: number; repos?: string[] };
+    assert.equal(afterRepos.intervalMs, 180_000);
+    assert.deepEqual(afterRepos.repos, ['o/three']);
+
     assert.equal(runtime.setConfig({ intervalMs: 1_000 }).config.intervalMs, 60_000);
     assert.throws(() => runtime.setConfig({ intervalMs: 'soon' }), RuntimeConfigError);
     assert.throws(() => runtime.setConfig({ repos: ['bad'] }), RuntimeConfigError);
