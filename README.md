@@ -117,7 +117,7 @@ Cordis patch 里的 `intervalMs` / `repos`。要恢复 patch 默认值，删除�
 
 | 键 | 默认值 | 说明 |
 | --- | --- | --- |
-| `intervalMs` | `300000` | 轮询间隔；最小 60 秒，最大 24 小时 |
+| `intervalMs` | `300000`（5 分钟） | 轮询间隔；最小 60 秒，最大 24 小时。实际间隔取本值与 GitHub `X-Poll-Interval` 的较大者 |
 | `windowMs` | `604800000`（7 天） | review/issue/mention 首轮与过滤窗口；`0` 表示不过滤 |
 | `repos` | `[]` | 维护中的仓库列表，`owner/repo`；issue 流必填 |
 | `maxRepos` | `10` | 单轮最多查多少个仓库（1–10） |
