@@ -167,6 +167,8 @@ export class GithubMessageRuntime {
   private running = false;
   private lastSummary: PollSummary | undefined;
   private nextPollAt: number | undefined;
+  /** GitHub Notifications 返回的最小轮询间隔；失败时也要继续遵守。 */
+  private githubPollIntervalMs: number | undefined;
   private featureSupported = false;
   private mentionEtag: string | undefined;
   private consecutiveFailures = 0;
@@ -250,8 +252,8 @@ export class GithubMessageRuntime {
     if (summary?.rateLimitResetAt !== undefined) {
       delay = Math.max(delay, summary.rateLimitResetAt - this.now() + 5_000);
     }
-    if (summary?.pollIntervalMs !== undefined) {
-      delay = Math.max(delay, summary.pollIntervalMs);
+    if (this.githubPollIntervalMs !== undefined) {
+      delay = Math.max(delay, this.githubPollIntervalMs);
     }
     this.nextPollAt = this.now() + delay;
     this.timer = setTimeout(() => void this.pollNow(), delay);
@@ -290,6 +292,7 @@ export class GithubMessageRuntime {
       // detach 后在途轮询不再写见/统计，避免把已经撤销的来源状态落盘。
       if (!this.started || this.handle === undefined) return;
       this.lastSummary = summary;
+      if (summary.pollIntervalMs !== undefined) this.githubPollIntervalMs = summary.pollIntervalMs;
       this.stats = recordStats(this.stats, summary);
       this.login = loginFromPoll(this.login, summary);
       if (this.mentionSettled() && summary.mentionEtag !== undefined) this.mentionEtag = summary.mentionEtag;

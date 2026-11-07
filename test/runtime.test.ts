@@ -278,6 +278,42 @@ test('detach 后在途轮询不再 emit 或写统计', async (t) => {
   }
 });
 
+test('轮询间隔取配置与 X-Poll-Interval 的较大值，失败后仍遵守', async (t) => {
+  const dir = tempDir(t);
+  let fail = false;
+  const transport = new FakeTransport((request): GhResponse => {
+    if (request.endpoint === 'notifications') {
+      if (fail) throw new GhError('network', 'network down');
+      return { status: 200, headers: { 'x-poll-interval': '180' }, body: '[]' };
+    }
+    if (request.endpoint === 'user') return { status: 200, headers: {}, body: '{"login":"alice"}' };
+    if (request.endpoint === 'search/issues') {
+      return { status: 200, headers: {}, body: '{"total_count":0,"items":[]}' };
+    }
+    throw new Error(`unexpected ${request.endpoint}`);
+  });
+  const runtime = runtimeOf(dir, transport);
+  const fake = fakeService(['github-source']);
+  try {
+    runtime.attach(fake.service);
+    runtime.setConfig({ intervalMs: 300_000 });
+    await runtime.pollNow();
+    // 配置 5 分钟 > GitHub 的 3 分钟，按配置等待。
+    assert.equal(runtime.status().poll.nextPollAt, NOW + 300_000);
+
+    runtime.setConfig({ intervalMs: 60_000 });
+    // 配置 1 分钟 < GitHub 的 3 分钟，按 GitHub 等待。
+    assert.equal(runtime.status().poll.nextPollAt, NOW + 180_000);
+
+    fail = true;
+    await runtime.pollNow();
+    // 失败退避 2 分钟仍小于 GitHub 的 3 分钟，不能提前重试。
+    assert.equal(runtime.status().poll.nextPollAt, NOW + 180_000);
+  } finally {
+    runtime.detach();
+  }
+});
+
 test('dryRun 不推进 mention 游标与 ETag', async (t) => {
   const dir = tempDir(t);
   const transport = new FakeTransport((request): GhResponse => {
