@@ -2,7 +2,7 @@
 
 import { RPC_PATH } from '../constants.ts';
 
-const RPC_TIMEOUT_MS = 20_000;
+const RPC_TIMEOUT_MS = 60_000;
 
 export class PanelError extends Error {
   readonly code: string;

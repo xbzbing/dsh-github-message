@@ -231,7 +231,7 @@ test('轮询成功后更新统计与登录态，来源关闭时进入 waiting', 
 
 test('dryRun 不推进 mention 游标与 ETag', async (t) => {
   const dir = tempDir(t);
-  const transport = new FakeTransport((request) => {
+  const transport = new FakeTransport((request): GhResponse => {
     if (request.endpoint === 'notifications') {
       return {
         status: 200,

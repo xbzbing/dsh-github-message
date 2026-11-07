@@ -93,6 +93,7 @@ Cordis patch 里的 `intervalMs` / `repos`。要恢复 patch 默认值，删除�
 3. **跨轮询**：核心按 `(source, sourceEventId)` 幂等吸收；插件再把已接受的键写进 `seen.json`，重启后也不会重报。
 4. **来源关闭**：`emit` 返回 `source-disabled` 时不写 `seen`，下一轮自动重试。
 5. **dry-run**：核心未声明 `github-source` 时完全不 emit、不写 `seen`，核心升级后能补齐当前事实。
+6. **mention 游标**：只有上一轮真正处理完（非 dry-run、来源已开启、无错误）才推进 `since`/ETag；否则用完整窗口重扫。
 
 ## 配置
 
