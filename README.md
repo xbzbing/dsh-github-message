@@ -21,7 +21,7 @@ gh api user --jq .login
 ```
 
 `repo` 或 `notifications` scope 任一存在即可读 Notifications；只有 `repo` 时私有仓库也能读。
-如果 @ 提醒需要精确到评论但 token 只有公开读权限，可执行：
+两者都没有时，mention 流会自动降级为 `search mentions:@me`。如果 @ 提醒需要精确到评论，可执行：
 
 ```bash
 gh auth refresh -s notifications

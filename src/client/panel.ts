@@ -230,6 +230,7 @@ export function GithubMessagePanel(props: Props): unknown {
           row(t('账号'), login?.username ?? '—'),
           row(t('认证方式'), login?.tokenSource ?? '—'),
           row(t('Token scopes'), login?.scopes?.length ? login.scopes.join(', ') : '—'),
+          row(t('@ 方式'), config?.effectiveMentionMode ?? '—'),
           row(t('通知权限'), login?.notifications === 'ok'
             ? t('有')
             : login?.notifications === 'missing' ? t('缺失') : t('未知')),

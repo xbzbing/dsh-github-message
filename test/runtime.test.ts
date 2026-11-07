@@ -261,6 +261,31 @@ test('setConfig 保存周期与仓库，校验非法值', async (t) => {
   }
 });
 
+test('缺少 notifications scope 时自动降级 search', async (t) => {
+  const dir = tempDir(t);
+  const transport = new FakeTransport((request) => {
+    if (request.endpoint === 'search/issues') {
+      return { status: 200, headers: {}, body: '{"total_count":0,"items":[]}' };
+    }
+    if (request.endpoint === 'user') return { status: 200, headers: {}, body: '{"login":"alice"}' };
+    throw new Error(`unexpected ${request.endpoint}`);
+  });
+  transport.execResult = JSON.stringify({
+    hosts: { 'github.com': [{ state: 'success', active: true, login: 'alice', scopes: 'gist' }] },
+  });
+  const runtime = runtimeOf(dir, transport);
+  const fake = fakeService(['github-source']);
+  try {
+    runtime.attach(fake.service);
+    await runtime.pollNow();
+    assert.equal(runtime.status().config.effectiveMentionMode, 'search');
+    assert.equal(transport.calls.some((call) => call.endpoint === 'notifications'), false);
+    assert.ok(transport.calls.some((call) => String(call.params?.q).startsWith('mentions:@me')));
+  } finally {
+    runtime.detach();
+  }
+});
+
 test('checkLogin 更新账号与 API 状态', async (t) => {
   const dir = tempDir(t);
   const transport = new FakeTransport(() => ({ status: 200, headers: {}, body: '{"login":"alice"}' }));

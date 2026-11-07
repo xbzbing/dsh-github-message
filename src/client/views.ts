@@ -110,6 +110,7 @@ export interface Status {
     maxPages?: number;
     includeDrafts?: boolean;
     mentionMode?: string;
+    effectiveMentionMode?: string;
     timeoutMs?: number;
     cliPath?: string;
   };

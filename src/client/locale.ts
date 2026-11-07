@@ -28,6 +28,7 @@ export const EN: Record<string, string> = {
   '账号': 'Account',
   '认证方式': 'Token source',
   'Token scopes': 'Token scopes',
+  '@ 方式': 'Mentions mode',
   '通知权限': 'Notifications scope',
   '有': 'Yes',
   '缺失': 'Missing',

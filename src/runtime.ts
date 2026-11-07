@@ -5,6 +5,7 @@ import {
   MAX_INTERVAL_MS,
   MIN_INTERVAL_MS,
   normalizeRepo,
+  type MentionMode,
   type ResolvedConfig,
 } from './config.ts';
 import {
@@ -94,6 +95,7 @@ export interface StatusSnapshot {
     maxPages: number;
     includeDrafts: boolean;
     mentionMode: string;
+    effectiveMentionMode: string;
     timeoutMs: number;
     cliPath: string;
   };
@@ -276,7 +278,7 @@ export class GithubMessageRuntime {
       const summary = await pollOnce({
         client: this.client,
         handle: this.handle,
-        config: pollConfigOf(this.config, {
+        config: pollConfigOf({ ...this.config, mentionMode: this.effectiveMentionMode() }, {
           dryRun: !this.featureSupported,
           login: this.login.username,
           ...(this.stats.lastSuccessAt === undefined ? {} : { mentionSinceMs: this.stats.lastSuccessAt }),
@@ -374,6 +376,13 @@ export class GithubMessageRuntime {
     saveStats(this.config.statsFile, this.stats, this.logger);
   }
 
+  /** 缺少 notifications scope 时自动降级为 search，避免每轮都 403。 */
+  private effectiveMentionMode(): MentionMode {
+    return this.config.mentionMode === 'notifications' && this.login.notifications === 'missing'
+      ? 'search'
+      : this.config.mentionMode;
+  }
+
   private sourceState(): SourceState {
     if (this.handle === undefined) return 'waiting';
     if (!this.featureSupported) return 'dry-run';
@@ -412,6 +421,7 @@ export class GithubMessageRuntime {
         maxPages: this.config.maxPages,
         includeDrafts: this.config.includeDrafts,
         mentionMode: this.config.mentionMode,
+        effectiveMentionMode: this.effectiveMentionMode(),
         timeoutMs: this.config.timeoutMs,
         cliPath: this.config.cliPath ?? 'gh',
       },
