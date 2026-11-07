@@ -172,6 +172,7 @@ export class GithubMessageRuntime {
   private consecutiveFailures = 0;
   private attached = false;
   private loginProbed = false;
+  private remindersCache: { at: number; value: CoreSignalStats } | undefined;
 
   constructor(options: RuntimeOptions) {
     this.config = options.config;
@@ -261,15 +262,14 @@ export class GithubMessageRuntime {
     // 先占住 running 再探测登录，避免 attach 的首轮与面板“立即检查”并发。
     this.running = true;
     try {
-      // 401 后暂停自动轮询；面板的“立即检查”可以强制再探一次。
-      if (!force && this.login.api === 'expired') return;
-      // 第一轮前先探一次登录：mention 摘要需要当前账号名，面板也能立即显示状态。
-      if (!this.loginProbed) {
+      // 首次、或上次不可用时重新探测；这样终端里重新 gh auth login 后能自动恢复。
+      if (!this.loginProbed || this.login.api !== 'ok') {
         this.loginProbed = true;
         this.login = await probeLogin(this.client, this.config.timeoutMs);
         if (!this.started || this.handle === undefined) return;
-        if (!force && this.login.api === 'expired') return;
       }
+      // 401 后暂停自动轮询；面板的“立即检查”可以强制再探一次。
+      if (!force && this.login.api === 'expired') return;
       const summary = await pollOnce({
         client: this.client,
         handle: this.handle,
@@ -285,7 +285,10 @@ export class GithubMessageRuntime {
         }),
         seen: this.seen,
         now: this.now,
+        isActive: () => this.started && this.handle !== undefined,
       });
+      // detach 后在途轮询不再写见/统计，避免把已经撤销的来源状态落盘。
+      if (!this.started || this.handle === undefined) return;
       this.lastSummary = summary;
       this.stats = recordStats(this.stats, summary);
       this.login = loginFromPoll(this.login, summary);
@@ -383,8 +386,19 @@ export class GithubMessageRuntime {
       && !summary.dryRun
       && !summary.sourceDisabled
       && summary.mentionComplete
-      && summary.authenticated
-      && summary.errors.length === 0;
+      && summary.mention.authenticated
+      && summary.mention.errors.length === 0;
+  }
+
+  /** 面板每 10 秒刷新一次，SQLite 统计缓存 5 秒，避免反复同步打开数据库。 */
+  private remindersSnapshot(): CoreSignalStats {
+    const now = this.now();
+    if (this.remindersCache !== undefined && now - this.remindersCache.at < 5_000) {
+      return this.remindersCache.value;
+    }
+    const value = this.reminders();
+    this.remindersCache = { at: now, value };
+    return value;
   }
 
   /** 缺少 notifications scope 时自动降级为 search，避免每轮都 403。 */
@@ -446,7 +460,7 @@ export class GithubMessageRuntime {
         backoffMs: this.consecutiveFailures === 0 ? 0 : this.backoffDelay(),
       },
       stats: this.stats,
-      reminders: this.reminders(),
+      reminders: this.remindersSnapshot(),
     };
   }
 }
