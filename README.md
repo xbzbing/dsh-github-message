@@ -120,7 +120,7 @@ Cordis patch 里的 `intervalMs` / `repos`。要恢复 patch 默认值，删除�
 | `intervalMs` | `300000` | 轮询间隔；最小 60 秒，最大 24 小时 |
 | `windowMs` | `604800000`（7 天） | review/issue/mention 首轮与过滤窗口；`0` 表示不过滤 |
 | `repos` | `[]` | 维护中的仓库列表，`owner/repo`；issue 流必填 |
-| `maxRepos` | `10` | 单轮最多查多少个仓库（1–50） |
+| `maxRepos` | `10` | 单轮最多查多少个仓库（1–10） |
 | `maxResults` | `100` | 单流单轮最多处理多少条（1–100） |
 | `maxPages` | `3` | 每个搜索最多翻几页（1–10） |
 | `includeDrafts` | `true` | 是否提醒 draft PR |

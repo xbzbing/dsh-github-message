@@ -12,7 +12,7 @@ export const MIN_INTERVAL_MS = 60_000;
 // Node 的 setTimeout 对超过 2^31-1 的延迟会退化为 1ms；这里取 24 小时作为产品上限。
 export const MAX_INTERVAL_MS = 24 * 60 * 60_000;
 export const DEFAULT_MAX_REPOS = 10;
-export const MAX_REPOS_LIMIT = 50;
+export const MAX_REPOS_LIMIT = 10;
 export const DEFAULT_MAX_RESULTS = 100;
 export const DEFAULT_MAX_PAGES = 3;
 export const DEFAULT_TIMEOUT_MS = 20_000;

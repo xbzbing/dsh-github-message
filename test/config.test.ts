@@ -69,6 +69,10 @@ test('仓库名校验、去重与上限', () => {
   const limited = resolveConfig({ repos: many, maxRepos: 3 }, ENV, warnings);
   assert.deepEqual(limited.repos, many.slice(0, 3));
   assert.ok(warnings.some((warning) => warning.includes('maxRepos')));
+
+  const capped = resolveConfig({ repos: many, maxRepos: 50 }, ENV);
+  assert.equal(capped.maxRepos, 10);
+  assert.equal(capped.repos.length, 10);
 });
 
 test('mentionMode 非法值降级，off/search 保留', () => {
