@@ -74,6 +74,7 @@ function baseResult(): MentionResult {
 function note(result: MentionResult, error: unknown): void {
   if (error instanceof GhError) {
     if (error.kind === 'unauthenticated') result.authenticated = false;
+    if (error.kind === 'rate-limited' && error.retryAt !== undefined) result.rateLimitResetAt = error.retryAt;
     if (result.errors.length < 10) result.errors.push(error.message);
   } else if (result.errors.length < 10) {
     result.errors.push(error instanceof Error ? error.message : String(error));
