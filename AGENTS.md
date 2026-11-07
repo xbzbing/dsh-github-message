@@ -16,7 +16,10 @@
 
 - [docs/plan/01-可行性研究与开发计划.md](docs/plan/01-可行性研究与开发计划.md)
 - [docs/plan/02-开发计划-三路提醒.md](docs/plan/02-开发计划-三路提醒.md)
+- [docs/adr/](docs/adr/)：重要决策记录
 - 核心改动提案：[dsh-my-superagent issue #1](https://github.com/xbzbing/dsh-my-superagent/issues/1)
+
+本地调研、临时记录、个人脚本一律放 `docs/local/`（已 gitignore），不要入仓。
 
 ## 不可违反的边界
 
@@ -100,7 +103,8 @@ gh api 'notifications?all=true&per_page=1' --include
 - **DDD + TDD**：先写契约/用例，再实现；测试用 fake `gh`、fake SourceService，不访问真实 GitHub。
 - 每个流（review/issue/mention）独立失败、独立统计；单条坏数据不能中断整轮。
 - 新增行为必须同时补测试；`npm run check` 全绿才算完成。
-- 提交信息用 Conventional Commits，正文中文；只做本地提交，不 push。
+- 重要决策写 ADR（`docs/adr/NNNN-标题.md`，状态/日期/背景/决策/代价/相关），不要只留在对话里。
+- 提交信息用 Conventional Commits，正文中文；按功能/模块拆分提交，不写超大变更；只做本地提交，不 push。
 - 若干功能完成后，用隔离上下文的 `code-review-and-quality` 五轴评审；不修的结论写到
   `docs/review/` 并说明理由。
 

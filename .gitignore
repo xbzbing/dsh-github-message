@@ -34,3 +34,6 @@ test-results/
 # Cache
 .cache/
 .eslintcache
+
+# Local-only docs (not committed)
+docs/local/
