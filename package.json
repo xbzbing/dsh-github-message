@@ -1,9 +1,20 @@
 {
   "name": "dsh-github-message",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.1.0-stage.0",
+  "description": "DeepSeek Harness (dsh) plugin: read-only GitHub polling that turns review requests, new issues and @mentions into my-superagent/v1 signals.",
   "type": "module",
-  "description": "GitHub 消息来源：只读轮询待评审 PR、维护仓库的新 Issue 与 @ 提醒，按 my-superagent/v1 上报信号。",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xbzbing/dsh-github-message.git"
+  },
+  "homepage": "https://github.com/xbzbing/dsh-github-message#readme",
+  "bugs": {
+    "url": "https://github.com/xbzbing/dsh-github-message/issues"
+  },
   "icon": "./assets/icon.svg",
   "main": "./lib/index.js",
   "exports": {
@@ -18,11 +29,25 @@
     "cordis.patch.yml",
     "assets/icon.svg",
     "locale/*.json",
-    "README.md"
+    "README.md",
+    "README.en.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "github",
+    "notifications",
+    "code-review",
+    "superagent"
   ],
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "compatibility": {
+      "dsh": ">=0.2.2-rc.1"
     },
     "client": {
       "platform": "web",
@@ -40,6 +65,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test \"test/**/*.test.ts\"",
     "smoke": "npm run build && node scripts/smoke.mjs",
+    "assert-pack": "node scripts/assert-pack.mjs",
     "check": "npm run typecheck && npm test && npm run build"
   },
   "engines": {
