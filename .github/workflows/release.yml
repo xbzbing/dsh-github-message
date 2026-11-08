@@ -1,0 +1,264 @@
+name: release
+
+# Main-driven release. A version bump pushed to main runs the full gate, tags
+# the release commit, publishes the tarball to npm and opens a GitHub Release
+# with the same tarball attached.
+#
+# Unlike a strictly "prereleases never publish" policy, a prerelease version
+# (0.1.0-stage.0) DOES reach npm here — under its own dist-tag (`stage`, `rc`,
+# `alpha`, …) so `@latest` keeps pointing at a stable build. That is what lets a
+# stage build be installed with `dsh plugin add dsh-github-message@stage`.
+#
+# A stable body comes from docs/releases/v<version>.md and must be committed with
+# the version bump. A prerelease page starts from .github/PRERELEASE_BODY.md and
+# its full change log is authored afterwards with `gh release edit`; rerunning
+# the workflow leaves that hand-written body alone instead of clobbering it.
+#
+# Every step checks state first, so a partially completed release can be re-run:
+# an already-published npm version is skipped, an existing tag or Release is not
+# recreated (the Release body is edited in place). npm publish sits after the tag
+# and before the Release — it is the only irreversible step.
+#
+# Two jobs, on purpose. The gate installs devDependencies and runs their code,
+# so it must not hold a token that can push a tag or mint an OIDC identity.
+# `gate` is read-only and hands the built tarball to `release` as an artifact;
+# `release` executes no dependency code at all.
+on:
+  push:
+    branches: [main]
+    paths: [package.json]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24.x'
+          cache: npm
+          registry-url: 'https://registry.npmjs.org'
+
+      # Read what has already happened for this version before spending a minute
+      # on a gate that may not be needed.
+      - id: state
+        name: Release state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          V=$(node -p "require('./package.json').version")
+          if ! printf '%s' "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+            echo "::error::package.json version '$V' is not a release version"
+            exit 1
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          case "$V" in
+            *-*) PRE=true ;;
+            *)   PRE=false ;;
+          esac
+          echo "prerelease=$PRE" >> "$GITHUB_OUTPUT"
+          # 0.1.0-stage.0 -> stage, 1.0.0-rc.1 -> rc, anything odd -> next.
+          if [ "$PRE" = "true" ]; then
+            ID=$(printf '%s' "$V" | sed -n 's/^[0-9.]*-\([A-Za-z][A-Za-z0-9-]*\).*$/\1/p')
+            [ -n "$ID" ] || ID=next
+          else
+            ID=latest
+          fi
+          echo "dist_tag=$ID" >> "$GITHUB_OUTPUT"
+          printf 'V=%s\nPRERELEASE=%s\nDIST_TAG=%s\n' "$V" "$PRE" "$ID" > release-state.env
+
+          REMOTE="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code --tags "$REMOTE" "refs/tags/v$V" >/dev/null 2>&1; then
+            echo "tag=done" >> "$GITHUB_OUTPUT"
+            # An existing tag is judged by the version inside the commit it
+            # points at, not by SHA equality.
+            if TV=$(git fetch --quiet --depth=1 "$REMOTE" "refs/tags/v$V" \
+                && git show FETCH_HEAD:package.json \
+                | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).version))') \
+              && [ -n "$TV" ]; then
+              if [ "$TV" != "$V" ]; then
+                echo "::error::tag v$V points at a commit whose package.json version is '$TV', not '$V'"
+                exit 1
+              fi
+            else
+              echo "::error::could not read package.json from tag v$V — refusing to guess whether it was released"
+              exit 1
+            fi
+          fi
+          gh release view "v$V" >/dev/null 2>&1 && echo "gh=done" >> "$GITHUB_OUTPUT" || true
+          npm view "dsh-github-message@$V" version >/dev/null 2>&1 && echo "npm=done" >> "$GITHUB_OUTPUT" || true
+
+      - id: notes
+        name: Release notes
+        env:
+          V: ${{ steps.state.outputs.version }}
+          PRERELEASE: ${{ steps.state.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          if [ "$PRERELEASE" = "true" ]; then
+            sed -e '/^<!--/,/-->/d' -e "s|<TAG>|v$V|g" -e "s|<VERSION>|$V|g" .github/PRERELEASE_BODY.md > release-notes.md
+          else
+            FILE="docs/releases/v$V.md"
+            if [ ! -f "$FILE" ]; then
+              echo "::error::$FILE is missing — write it from .github/RELEASE_TEMPLATE.md and commit it with the version bump"
+              exit 1
+            fi
+            cp "$FILE" release-notes.md
+          fi
+          echo "file=release-notes.md" >> "$GITHUB_OUTPUT"
+
+      - name: Gate
+        if: steps.state.outputs.npm != 'done' || steps.state.outputs.tag != 'done' || steps.state.outputs.gh != 'done'
+        env:
+          V: ${{ steps.state.outputs.version }}
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run check
+          npm pack
+          mkdir -p pkg && tar -xzf "dsh-github-message-$V.tgz" -C pkg
+          node scripts/assert-pack.mjs pkg/package
+
+      - name: Hand the tarball to the release job
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-tarball
+          overwrite: true
+          path: |
+            release-state.env
+            release-notes.md
+            dsh-github-message-*.tgz
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    needs: gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write   # push the release tag, create / edit the Release
+      id-token: write   # npm provenance / Trusted Publishing
+    steps:
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: release-tarball
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24.x'
+          registry-url: 'https://registry.npmjs.org'
+
+      - id: state
+        name: Release state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          . ./release-state.env
+          if ! printf '%s' "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+            echo "::error::release state carries no release version ('$V')"
+            exit 1
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "dist_tag=$DIST_TAG" >> "$GITHUB_OUTPUT"
+          # Re-checked here so a tag created or moved between the two jobs
+          # cannot slip through.
+          if git ls-remote --exit-code --tags "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "refs/tags/v$V" >/dev/null 2>&1; then
+            echo "tag=done" >> "$GITHUB_OUTPUT"
+            if TV=$(gh api "repos/${GITHUB_REPOSITORY}/contents/package.json?ref=v$V" --jq .content \
+                | base64 --decode \
+                | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).version))') \
+              && [ -n "$TV" ]; then
+              if [ "$TV" != "$V" ]; then
+                echo "::error::tag v$V points at a commit whose package.json version is '$TV', not '$V'"
+                exit 1
+              fi
+            else
+              echo "::error::could not read package.json from tag v$V — refusing to guess whether it was released"
+              exit 1
+            fi
+          fi
+          gh release view "v$V" >/dev/null 2>&1 && echo "gh=done" >> "$GITHUB_OUTPUT" || true
+          npm view "dsh-github-message@$V" version >/dev/null 2>&1 && echo "npm=done" >> "$GITHUB_OUTPUT" || true
+
+      - name: Tag
+        if: steps.state.outputs.tag != 'done'
+        env:
+          V: ${{ steps.state.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init --quiet tagname
+          cd tagname
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --quiet --depth=1 "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "${GITHUB_SHA}"
+          git tag -a "v$V" -m "v$V" FETCH_HEAD
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "refs/tags/v$V"
+
+      # Trusted Publishing (OIDC): register this workflow as a trusted publisher
+      # on npmjs.com and keep NPM_TOKEN unset. With the secret present npm would
+      # authenticate through the .npmrc that setup-node writes for registry-url;
+      # without it, npm falls back to the OIDC identity granted above.
+      - name: Publish to npm
+        if: steps.state.outputs.npm != 'done'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          V: ${{ steps.state.outputs.version }}
+          DIST_TAG: ${{ steps.state.outputs.dist_tag }}
+        run: |
+          set -euo pipefail
+          npm publish "dsh-github-message-$V.tgz" --provenance --access public --tag "$DIST_TAG"
+
+      - name: GitHub Release
+        if: steps.state.outputs.gh != 'done'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          V: ${{ steps.state.outputs.version }}
+          PRERELEASE: ${{ steps.state.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          if [ "$PRERELEASE" = "true" ]; then
+            CHANNEL=(--prerelease)
+          else
+            CHANNEL=(--latest)
+          fi
+          if gh release view "v$V" >/dev/null 2>&1; then
+            if [ "$PRERELEASE" = "true" ]; then
+              # A pre-release body is authored by hand once the page exists, so a
+              # rerun must not clobber it with the placeholder.
+              gh release edit "v$V" --title "v$V" --prerelease
+            else
+              gh release edit "v$V" --title "v$V" --notes-file release-notes.md --latest
+            fi
+          else
+            gh release create "v$V" "dsh-github-message-$V.tgz" \
+              --title "v$V" --notes-file release-notes.md --verify-tag "${CHANNEL[@]}"
+          fi
+
+  # A workflow_dispatch from anything but main publishes nothing; without this
+  # the run would be green with both jobs silently skipped.
+  notice:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    if: github.ref != 'refs/heads/main'
+    steps:
+      - run: echo "::notice::release runs on main only; ref ${GITHUB_REF} triggered no release action"
