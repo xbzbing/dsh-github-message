@@ -1,89 +1,53 @@
 # dsh-github-message
 
-把 GitHub 上「待我评审的 PR」「我维护项目的新 Issue」「@ 我或我所在团队的消息」接成
-[dsh-my-superagent](../dsh-my-superagent) 的数据来源，并带一个 Web 配置页。
+[English](https://github.com/xbzbing/dsh-github-message/blob/main/README.en.md) | 简体中文
 
-- 只用本机 `gh` 的只读 API（GET/search/notifications），不需要 Webhook，不需要公网回调地址。
-- 只做**采集 → 翻译 → 上报**；评审、Issue 分析、评论/写回、是否打扰主人全部由 `dsh-my-superagent` 完成。
-- 三类信号都以 `trust: 'external'` 注册，核心回源确认后才采纳。
-- 默认每 **5 分钟**检查一次；同一 PR 的同一 head SHA、同一 Issue、同一条评论只上报一次。
-- 当前核心 P1 已支持 `github:` subject（`github-source`）；旧核心缺少该能力时进入 dry-run：照常采集候选，但不向核心上报、不写去重状态。
+`dsh-github-message` 是 [DSH（DeepSeek Harness）](https://github.com/deepseek-ai/dsh) 的一个消息来源插件：
+用本机 `gh` 只读轮询 GitHub，把「待我评审的 PR」「我维护的仓库里新开的 Issue」「有人 @ 我」翻译成
+`my-superagent/v1` 信号，交给 [dsh-my-superagent](https://github.com/xbzbing/dsh-my-superagent) 决定要不要打扰主人。
 
-## 前置条件
-
-1. 安装 [GitHub CLI](https://cli.github.com/)：`brew install gh`（macOS）。
-2. 登录：`gh auth login`。
-3. 确认 token 有读权限：
-
-```bash
-gh auth status
-gh api user --jq .login
-```
-
-`repo` 或 `notifications` scope 任一存在即可读 Notifications；只有 `repo` 时私有仓库也能读。
-两者都没有时，mention 流会自动降级为 `search mentions:@me`。如果 @ 提醒需要精确到评论，可执行：
-
-```bash
-gh auth refresh -s notifications
-```
-
-插件不读取、不保存 token，`gh` 自己使用 keyring；子进程也不会收到 `GH_TOKEN` / `GITHUB_TOKEN`。
+插件只做 **采集 → 翻译 → 上报**。评审、Issue 分析、评论写回、是否通知，全部由超级助理完成——
+本仓库不包含任何写 GitHub 的代码。没有安装超级助理时，插件照常轮询，并把新消息显示在页面右下角。
 
 ## 安装
 
 ```bash
-cd /Users/ankh/workspace/private/dsh-plugins/dsh-github-message
-npm install
-npm run build
+# 正式版（npm）
+dsh plugin --profile web add dsh-github-message@latest
 
-# 先卸载旧版本，等 host 完成重载（约 15 秒）再安装
-dsh plugin --profile web remove dsh-github-message
-sleep 15
-dsh plugin --profile web add file:/Users/ankh/workspace/private/dsh-plugins/dsh-github-message
+# 预发布（npm 的 stage 通道，版本号形如 0.1.0-stage.0）
+dsh plugin --profile web add dsh-github-message@stage
+
+# 或指定版本的 GitHub Release 附件
+dsh plugin --profile web add https://github.com/xbzbing/dsh-github-message/releases/download/v0.1.0/dsh-github-message-0.1.0.tgz
 ```
 
-安装后插件层会自动 `insert` 一个 `dsh-github-message` 条目。宿主里没有 `mySuperagent`
-服务时插件照常加载，只是不注册来源；面板仍可查看登录、仓库与统计。
+仓库不提交 `lib/`，所以不能用 `dsh plugin add github:…` 直接安装，请用 npm 或 Release 附件。
 
-打开 **设置 → 插件 → GitHub 消息**，或在侧栏 **插件** 页的已安装列表里打开本包的配置卡。
-新增 client 半后如果页面没有立刻出现，请刷新 DSH Web 页面。
+首次安装后打开 **设置 → 插件 → GitHub 消息**：先确认「GitHub 登录」是绿色的（`gh auth status`），
+再把要盯的仓库填进「维护仓库」。来源默认关闭，需要到超级助理的「来源」页打开 `github-message`。
 
-更新版本时先卸载再安装，不需要重启 dsh：
+更新时，只改了 client 端的版本刷新页面即生效；含 host 端改动的版本需要重装插件（`dsh plugin remove` 后再 `add`），
+profile 没开 HMR 的话还要重启 dsh。
 
-```bash
-npm run build
-dsh plugin --profile web remove dsh-github-message
-sleep 15
-dsh plugin --profile web add file:/Users/ankh/workspace/private/dsh-plugins/dsh-github-message
-```
+## 前提
 
-## 面板
+- 本机已安装并登录 [GitHub CLI](https://cli.github.com/)：`gh auth status` 通过。
+- 想看 `@` 提醒需要 `notifications` scope；缺失时自动降级为 search，面板会提示 `gh auth refresh -s notifications`。
+- 想上报给超级助理：`dsh-my-superagent` 声明 `github-source`（P1 已实现）。旧核心自动进入 dry-run，只采集不推送。
+- 兼容性：在 `dsh@0.2.2-rc.1` 上验证；Node.js ≥ 24.9（插件随 dsh 进程运行）。
 
-client 半注册在 `settings.section`、`plugins.bundle.config` 和 `shell.overlay` 三个槽位，文案跟随 DSH 语言设置。
-四张卡片都可点标题折叠（默认收起「运行统计」），刷新后恢复默认。
+## 功能
 
-- **GitHub 登录**：账号、token 来源、scopes、通知权限、API 探测结果；点「检查登录」立即重查。
-- **核心能力**：核心是否声明 `github-source`。当前核心 P1 已支持；旧版本缺失时提示升级并进入 dry-run。
-  完全没有超级助理时显示「未接入超级助理」，并说明消息改走右下角提示。
-- **维护仓库**：每行一个 `owner/repo`，保存后立即生效；issue 流只提醒这些仓库。
-- **检查周期**：当前周期、下一轮时间、失败退避；按分钟修改并保存。
-- **运行统计**：卡片头放「立即检查 / 重置统计」；内部分三段——三路上报明细、
-  最近轮询与核心信号并排、轮询历史（最近 5 轮），段间用分隔线区分。
-- **核心信号**：只读 `$DSH_HOME/dsh-my-superagent/state.sqlite`，按 kind/state 统计
-  `source='github-message'` 的信号；读不到时降级提示。
-- **右下角提示**：`shell.overlay` 上的独立浮层，不依赖设置页是否打开。只在**未接入核心**
-  （完全没有 `mySuperagent`，或核心缺 `github-source`）时出现，已接入则完全静默。
-
-### 右下角提示
-
-- 采集到新事实时弹一张卡片：类型、标题、`owner/repo #编号`、时间；标题可点开 GitHub。
-- 最多同时显示 4 张，12 秒自动消失，可手动关闭；悬停不暂停（保持实现简单）。
-- 只提示一次：记录写在 `notified.json`，**不写 `seen`**，所以接入核心后同一事实仍会重新上报。
-- 首次连接只取游标，不把历史积压一次弹出来；页面刷新后不会重放旧提示。
-- 已接入核心时客户端降频到 30 秒轮询一次，只等状态变化。
-
-面板保存的周期与仓库列表写入 `$DSH_HOME/dsh-github-message/config.json`，**优先于**
-Cordis patch 里的 `intervalMs` / `repos`。要恢复 patch 默认值，删除这个文件后重新加载插件。
+- **待评审 PR**：`review-requested:@me` 的 open PR，按 head 提交去重；同一 PR 推新 commit 才算新事实。
+- **新 Issue**：只盯「维护仓库」列表里的仓库，按创建时间提醒一次。
+- **@ 提醒**：走 Notifications（`reason=mention|team_mention`），拿不到时降级为 `mentions:@me` 搜索；按评论 id 去重。
+- **轮询节奏**：默认 5 分钟，可配 1 分钟～24 小时；实际间隔取配置与 GitHub `X-Poll-Interval` 的较大者，
+  失败指数退避（最长 30 分钟），限流时等到 `X-RateLimit-Reset`。
+- **本地提示**：未接入超级助理时，新消息在右下角弹卡片（最多 4 张、12 秒消失、可点开 GitHub）；
+  每条只弹一次，记录写 `notified.json` 而不写 `seen`，之后接入核心仍会重新上报。
+- **配置页**：登录状态、核心能力、仓库列表与检查周期（共用一个保存按钮）、三路统计与核心信号；卡片可折叠。
+- **中英双语**：跟随 DSH 语言设置。
 
 ## 信号契约
 
@@ -91,27 +55,27 @@ Cordis patch 里的 `intervalMs` / `repos`。要恢复 patch 默认值，删除�
 | --- | --- | --- | --- |
 | `code-review.requested` | `github:<owner>/<repo>/pull/<n>` | `review:<repo>#<n>:<headSha>` | PR 请求我（或团队）评审 |
 | `github.issue.opened` | `github:<owner>/<repo>/issues/<n>` | `issue:<repo>#<n>` | 维护仓库有新 Issue |
-| `github.mention` | `github:<owner>/<repo>/issues/<n>` | `mention:<repo>#<n>:<commentId|body>` | Issue/PR/评论里 @ 我或团队 |
+| `github.mention` | `github:<owner>/<repo>/issues/<n>` | `mention:<repo>#<n>:<commentId\|body>` | Issue/PR/评论里 @ 我或团队 |
 
 - `repo` 在事件键中小写归一化，展示保留 GitHub 返回的大小写。
-- 所有外部文本去控制字符、压成单行并按字段截断；`links` 只放 `https://github.com/...`。
+- 所有外部文本先去控制字符、压成单行并按字段截断；链接只接受 `https://github.com/...`。
 - `payload` 只放展示/路由需要的字段，不放 raw API 响应、diff、邮箱、token。
-- 同一 PR 推新 commit（head SHA 变化）才算新事实；只改标题/描述不重复提醒。
+- 插件以 `trust: 'external'` 注册，核心回源确认后才采纳。
 
-## 去重
+## 权限与数据边界
 
-1. **事件键**：PR 用 head SHA，Issue 用编号，@ 用 comment id（没有 id 时用固定的 `body` 标记）。
-2. **本轮内**：同一个事件键只 emit 一次。
-3. **跨轮询**：核心按 `(source, sourceEventId)` 幂等吸收；插件再把已接受的键写进 `seen.json`，重启后也不会重报。
-4. **来源关闭**：`emit` 返回 `source-disabled` 时不写 `seen`，下一轮自动重试。
-5. **dry-run**：旧核心未声明 `github-source` 时完全不 emit、不写 `seen`，升级后能补齐当前事实。
-6. **本地提示**：未接入核心时每条事实只弹一次，记在 `notified.json`；这份记录**不写 `seen`**，接入核心后仍会重新上报。
-7. **mention 游标**：只有上一轮真正处理完（非 dry-run、来源已开启、无错误）才推进 `since`/ETag；否则用完整窗口重扫。
+- **只读 GitHub**：只用 `gh api` 的 GET / search / notifications，代码里没有任何 POST/PATCH/PUT/DELETE，
+  也不调用 `gh pr review`、`gh pr comment`、`gh issue comment`。
+- **不碰凭据**：不读、不写、不记录 token；`gh` 用自己的 keyring，子进程用最小环境，不传 `GH_TOKEN` / `GITHUB_TOKEN`。
+- **不写回**：不评审、不评论、不合入、不 push。评审与 Issue 分析由超级助理完成。
+- **本地文件**：只写插件自己的数据目录（`$DSH_HOME/dsh-github-message/`：`seen.json`、`notified.json`、
+  `stats.json`、`config.json`、`poll.log`），权限 0700/0600。
+- **核心数据库**：面板的「核心信号」只读 `$DSH_HOME/dsh-my-superagent/state.sqlite` 做统计，读不到就降级提示。
 
 ## 配置
 
-默认值写在 `cordis.patch.yml` 与 `src/config.ts`。其余配置在 profile 的
-`~/.dsh/profiles/web/cordis.patch.yml` 里用同一个 id 追加：
+默认值写在 `cordis.patch.yml` 与 `src/config.ts`。要覆盖时在 profile 的 `cordis.patch.yml` 里用同一个 id 追加
+（patch 的 `config` 是整体替换，需要保留的键都要写上）：
 
 ```yaml
 - id: dsh-github-message
@@ -120,13 +84,9 @@ Cordis patch 里的 `intervalMs` / `repos`。要恢复 patch 默认值，删除�
     intervalMs: 300000
     windowMs: 604800000
     repos:
-      - xbzbing/dsh-git-panel
       - xbzbing/dsh-my-superagent
     mentionMode: notifications
 ```
-
-> patch 的 `config` 是整体替换，不是按字段合并。写了这段就把需要保留的键都写上；
-> 没写的键回落到 `src/config.ts` 里的默认值。
 
 | 键 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -143,82 +103,44 @@ Cordis patch 里的 `intervalMs` / `repos`。要恢复 patch 默认值，删除�
 | `onStart` | `true` | 插件加载后是否立即轮询一次 |
 | `stateFile` | `$DSH_HOME/dsh-github-message/seen.json` | 去重状态；`false` 只在内存 |
 | `notifiedFile` | `$DSH_HOME/dsh-github-message/notified.json` | 本地提示记录；与去重分开，`false` 只在内存 |
-| `seenTtlMs` | `7776000000`（90 天） | 去重记录保留期 |
-| `seenMaxEntries` | `20000` | 去重记录上限 |
+| `seenTtlMs` | `7776000000`（90 天） | 去重与提示记录保留期 |
+| `seenMaxEntries` | `20000` | 去重与提示记录上限 |
 | `logFile` | `$DSH_HOME/dsh-github-message/poll.log` | 每轮摘要；`false` 关闭 |
 | `statsFile` | `$DSH_HOME/dsh-github-message/stats.json` | 累计统计；`false` 只在内存 |
 | `runtimeConfigFile` | `$DSH_HOME/dsh-github-message/config.json` | 面板保存的运行时配置；`false` 不持久化 |
 
-## 核心能力门禁
-
-插件注册时读取 `mySuperagent.protocol.features`：
-
-- 含 `github-source`：正常上报。当前核心 P1 已实现（ADR-0036），真实信号可进入回源确认与通知链路。
-- 不含：进入 **dry-run**，面板显示「采集但不推送」，不 emit、不写 `seen`。
-  升级核心后重新加载插件即可补齐当前仍然符合条件的 review/issue/mention。
-
-核心侧 P1 已完成；后续 Issue 分析、评审任务与写回仍按
-[dsh-my-superagent issue #1](https://github.com/xbzbing/dsh-my-superagent/issues/1) 推进。
-
-## 验证
-
-- 面板：设置 → 插件 → GitHub 消息；侧栏插件页的本包配置卡。
-- 轮询摘要：`$DSH_HOME/dsh-github-message/poll.log`，每行一个 JSON，含三路 fetched/emitted/duplicates/errors。
-- 去重状态：`$DSH_HOME/dsh-github-message/seen.json`。
-- 累计统计：`$DSH_HOME/dsh-github-message/stats.json`。
-- 面板保存的配置：`$DSH_HOME/dsh-github-message/config.json`。
-- 核心信号落库：
-
-```bash
-node --input-type=module -e '
-import { DatabaseSync } from "node:sqlite";
-const db = new DatabaseSync(process.env.DSH_HOME + "/dsh-my-superagent/state.sqlite", { readOnly: true });
-console.table(db.prepare("select kind, state, count(*) as n from signals where source = ? group by kind, state").all("github-message"));
-'
-```
-
-### 真实只读 smoke
-
-```bash
-npm run build
-node scripts/smoke.mjs
-DSH_SMOKE_REPOS=xbzbing/dsh-my-superagent node scripts/smoke.mjs
-```
-
-只读取登录、review、issue、mention，不创建/修改任何 GitHub 资源，不写插件状态。
-
-## 故障排查
-
-| 现象 | 处理 |
-| --- | --- |
-| 面板「未安装 gh」 | 安装 GitHub CLI，确认 `gh --version` 可用 |
-| 「凭据失效」/ API 401 | `gh auth login` 后点「检查登录」 |
-| 通知权限「缺失」 | `gh auth refresh -s notifications`，或把 `mentionMode` 设为 `search` |
-| 核心能力提示「缺少 GitHub 来源」 | 核心版本过旧；升级 `dsh-my-superagent` 后重新加载插件，旧核心下插件保持 dry-run，不会误写 seen |
-| 来源状态「等待开启」 | 到超级助理的「来源」页打开 `github-message` |
-| 一直无候选 | 检查 `repos`、`windowMs`、`gh auth status`；看 `poll.log` 的 errors |
-| 轮询变慢 | 面板显示退避时间；通常是限流或网络错误，恢复后自动重置 |
+面板保存的周期与仓库列表写入 `config.json`，**优先于** Cordis patch；删掉该文件即可回到 patch 默认值。
 
 ## 开发
 
 ```bash
 npm install
-npm run check   # typecheck + 单测 + 构建 host 与 client
-npm run smoke   # 真实只读 smoke
+npm run typecheck   # tsc --noEmit
+npm test            # node --test "test/**/*.test.ts"
+npm run build       # tsc host + esbuild client → lib/
+npm run check       # typecheck + test + build
+npm run smoke       # 真实只读 smoke（只查不改）
 ```
 
-构建产物：
+- 设计文档在 [docs/plan](docs/plan/)、决策记录在 [docs/adr](docs/adr/)、核心改动提案在
+  [dsh-my-superagent issue #1](https://github.com/xbzbing/dsh-my-superagent/issues/1)。
+- 测试用 fake `gh` 与 fake SourceService，不访问真实 GitHub；新增行为必须同时补测试。
 
-- `lib/index.js` + `lib/src/*.js`：host 半，`tsc` 编译。
-- `lib/client.js`：client 半，`esbuild` 打包成单文件，外层是 `window.__ModuleLoader__.load({ id, factory })`。
-- `locale/zh.json`、`locale/en.json`：插件管理页的标题/描述。
+## 发布
 
-重要决策记录在 [docs/adr](docs/adr)；本地调研与临时记录放 `docs/local/`（已 gitignore）。
+发布由 [`.github/workflows/release.yml`](.github/workflows/release.yml) 在「version bump 合入 main」时执行：
 
-## 安全边界
+1. 门禁：`npm ci` → `npm run check` → `npm pack` → `scripts/assert-pack.mjs`；
+2. 打 tag `v<version>`；
+3. `npm publish --provenance --tag <latest|stage|rc>`（正式版走 `latest`，预发布走各自的 dist-tag）；
+4. 创建 GitHub Release 并附上同一个 `.tgz`。正式版正文来自 `docs/releases/v<version>.md`，
+   预发布先用 `.github/PRERELEASE_BODY.md` 建页，之后再 `gh release edit` 补完整变更记录。
 
-- 只调用 `gh api` 的 GET/search/notifications；代码中没有 `-X POST/PATCH/PUT/DELETE`、
-  `gh pr review`、`gh pr comment`、`gh issue comment`。
-- 仓库名、PR/Issue 编号、SHA、API URL 使用前校验。
-- 子进程用 argv 数组、`shell: false`；只传运行 `gh` 所需的最小环境。
-- 不读取、不保存、不记录 token；日志里只有账号、状态与计数。
+正文格式见 [`.github/RELEASE_TEMPLATE.md`](.github/RELEASE_TEMPLATE.md)。npm 发布默认走 Trusted Publishing（OIDC），
+在 npmjs.com 的包设置里把 `release.yml` 登记为 trusted publisher 即可，仓库不需要 `NPM_TOKEN`。
+
+发版时 `package.json` 与 `src/constants.ts` 的 `PLUGIN_VERSION` 必须一起改，`test/version.test.ts` 会拦下不一致。
+
+## License
+
+[MIT](LICENSE)
