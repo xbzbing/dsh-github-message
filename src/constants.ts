@@ -2,7 +2,7 @@
 // 两端都会把它打进各自的产物。
 
 export const PACKAGE_NAME = 'dsh-github-message';
-export const PLUGIN_VERSION = '0.1.0-stage.0';
+export const PLUGIN_VERSION = '0.1.0';
 
 /** host 面板 RPC 路由：/api/dsh-github-message。 */
 export const RPC_PATH = 'dsh-github-message';
