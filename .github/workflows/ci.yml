@@ -1,0 +1,45 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: check (node 24.x)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24.x'
+          cache: npm
+
+      # The lock is committed; engines require >=24.9.0 and the suite runs the
+      # TypeScript sources directly through Node's type stripping.
+      - name: Install
+        run: npm ci
+
+      - name: Check
+        run: npm run check
+
+      # Packaging is part of the release contract: catch a missing lib entry or
+      # a stray source directory here, not in the publish job.
+      - name: Pack
+        run: |
+          set -euo pipefail
+          V=$(node -p "require('./package.json').version")
+          npm pack
+          mkdir -p pkg && tar -xzf "dsh-github-message-$V.tgz" -C pkg
+          node scripts/assert-pack.mjs pkg/package
