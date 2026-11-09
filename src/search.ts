@@ -53,6 +53,8 @@ export interface ReviewOptions {
   maxPages: number;
   includeDrafts: boolean;
   timeoutMs: number;
+  /** 用哪条搜索语句：默认「待我评审」，自提 PR 那条传 SELF_QUERY。 */
+  query?: string;
 }
 
 export interface IssueOptions {
@@ -76,6 +78,8 @@ export interface PullDetail {
 }
 
 export const REVIEW_QUERY = 'is:pr is:open review-requested:@me';
+// 自己提的 PR（ADR-0087）：不判断要不要打扰主人，那是核心的开关；这里只负责把事实报上去。
+export const SELF_QUERY = 'is:pr is:open author:@me';
 
 function emptyResult<T>(): StreamResult<T> {
   return { candidates: [], fetched: 0, filtered: 0, skipped: 0, errors: [], authenticated: true };
@@ -245,7 +249,7 @@ export async function fetchReviewCandidates(
     let items: unknown[];
     let totalCount: number;
     try {
-      const response = await searchPage(client, REVIEW_QUERY, page, perPage, 'updated', options.timeoutMs);
+      const response = await searchPage(client, options.query ?? REVIEW_QUERY, page, perPage, 'updated', options.timeoutMs);
       items = response.items;
       totalCount = response.totalCount;
     } catch (error) {

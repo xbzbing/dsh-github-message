@@ -15,7 +15,9 @@ export const PROTOCOL = 'my-superagent/v1';
 export const KIND_REVIEW = 'code-review.requested';
 export const KIND_ISSUE = 'github.issue.opened';
 export const KIND_MENTION = 'github.mention';
-export const KINDS = [KIND_REVIEW, KIND_ISSUE, KIND_MENTION] as const;
+/** 自己提的 PR（ADR-0087）：作者是主人本人，由核心按 review.selfPr 决定要不要评审。 */
+export const KIND_SELF = 'github.pr.opened';
+export const KINDS = [KIND_REVIEW, KIND_ISSUE, KIND_MENTION, KIND_SELF] as const;
 
 /**
  * 核心声明的可选能力。旧核心缺这个 feature 时插件只采集不 emit，

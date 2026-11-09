@@ -11,6 +11,7 @@ import {
 import {
   fetchIssueCandidates,
   fetchReviewCandidates,
+  SELF_QUERY,
   type IssueCandidate,
   type PullCache,
   type ReviewCandidate,
@@ -20,6 +21,7 @@ import {
   issueDraft,
   mentionDraft,
   reviewDraft,
+  selfPullDraft,
   type SignalDraft,
 } from './signals.ts';
 import type { SeenLike } from './state.ts';
@@ -91,6 +93,8 @@ export interface PollSummary {
   review: StreamSummary;
   issue: StreamSummary;
   mention: StreamSummary;
+  // 自己提的 PR（ADR-0087）：单独一条流，统计与排障时能看清是这一类。
+  selfPr: StreamSummary;
   fetched: number;
   emitted: number;
   duplicates: number;
@@ -200,7 +204,7 @@ function applyStreamMeta(stream: StreamSummary, source: StreamResult<unknown>): 
 }
 
 function aggregate(summary: PollSummary): void {
-  const streams = [summary.review, summary.issue, summary.mention];
+  const streams = [summary.review, summary.issue, summary.mention, summary.selfPr];
   summary.fetched = streams.reduce((total, stream) => total + stream.fetched, 0);
   summary.emitted = streams.reduce((total, stream) => total + stream.emitted, 0);
   summary.duplicates = streams.reduce((total, stream) => total + stream.duplicates, 0);
@@ -235,6 +239,30 @@ async function runReview(deps: PollDeps, now: number, summary: PollSummary, seen
   applyStreamMeta(summary.review, result);
   if (result.rateLimitResetAt !== undefined) summary.rateLimitResetAt = result.rateLimitResetAt;
   await processCandidates(summary.review, result.candidates as ReviewCandidate[], reviewDraft, deps, seen, now, flags);
+}
+
+// 自己提的 PR（ADR-0087）：与「待我评审」用同一条取数管线，只是换检索语句与 kind。
+// 要不要打扰主人由核心的开关决定，这里只负责把事实报上去。
+async function runSelfPulls(deps: PollDeps, now: number, summary: PollSummary, seen: Set<string>, flags: { sourceDisabled: boolean }): Promise<void> {
+  if (deps.isActive !== undefined && !deps.isActive()) return;
+  const sinceMs = deps.config.windowMs > 0 ? now - deps.config.windowMs : 0;
+  let result;
+  try {
+    result = await fetchReviewCandidates(deps.client, {
+      query: SELF_QUERY,
+      sinceMs,
+      maxResults: deps.config.maxResults,
+      maxPages: deps.config.maxPages,
+      includeDrafts: deps.config.includeDrafts,
+      timeoutMs: deps.config.timeoutMs,
+    }, deps.cache);
+  } catch (error) {
+    addError(summary.selfPr, `self 流失败：${errorText(error)}`);
+    return;
+  }
+  applyStreamMeta(summary.selfPr, result);
+  if (result.rateLimitResetAt !== undefined) summary.rateLimitResetAt = result.rateLimitResetAt;
+  await processCandidates(summary.selfPr, result.candidates as ReviewCandidate[], selfPullDraft, deps, seen, now, flags);
 }
 
 async function runIssues(deps: PollDeps, now: number, summary: PollSummary, seen: Set<string>, flags: { sourceDisabled: boolean }): Promise<void> {
@@ -299,6 +327,7 @@ export async function pollOnce(deps: PollDeps): Promise<PollSummary> {
     review: emptyStream(),
     issue: emptyStream(),
     mention: emptyStream(),
+    selfPr: emptyStream(),
     fetched: 0,
     emitted: 0,
     duplicates: 0,
@@ -316,6 +345,7 @@ export async function pollOnce(deps: PollDeps): Promise<PollSummary> {
   const flags = { sourceDisabled: false };
 
   await runReview(deps, now, summary, seenThisPoll, flags);
+  await runSelfPulls(deps, now, summary, seenThisPoll, flags);
   await runIssues(deps, now, summary, seenThisPoll, flags);
   await runMention(deps, now, summary, seenThisPoll, flags);
 
@@ -329,6 +359,7 @@ export function describeSummary(summary: PollSummary): string {
     `review ${summary.review.fetched}/${summary.review.emitted}`,
     `issue ${summary.issue.fetched}/${summary.issue.emitted}`,
     `mention ${summary.mention.fetched}/${summary.mention.emitted}`,
+    `self ${summary.selfPr.fetched}/${summary.selfPr.emitted}`,
     `去重 ${summary.duplicates}`,
   ];
   if (summary.deferred > 0) parts.push(`待上报 ${summary.deferred}`);

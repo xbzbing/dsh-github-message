@@ -1,7 +1,7 @@
 // 把三类 GitHub 事实翻译成 my-superagent/v1 的 SignalDraft。
 // 这里只做字段收敛与截断，不做“要不要打扰主人”的判断。
 
-import { KIND_ISSUE, KIND_MENTION, KIND_REVIEW } from './constants.ts';
+import { KIND_ISSUE, KIND_MENTION, KIND_REVIEW, KIND_SELF } from './constants.ts';
 import type { MentionCandidate } from './notifications.ts';
 import type { IssueCandidate, ReviewCandidate } from './search.ts';
 import { cleanText, githubUrl, repoKey } from './text.ts';
@@ -68,6 +68,18 @@ export function reviewDraft(review: ReviewCandidate): SignalDraft {
   const links = link('查看 PR', review.url);
   if (links !== undefined) draft.links = links;
   return draft;
+}
+
+// 自己提的 PR（ADR-0087）：字段收敛与 reviewDraft 一样，只换 kind 与 sourceEventId 前缀，
+// 免得两类信号在核心侧被当成同一条去重掉。
+export function selfPullDraft(review: ReviewCandidate): SignalDraft {
+  const draft = reviewDraft(review);
+  return {
+    ...draft,
+    sourceEventId: `self:${draft.sourceEventId.replace(/^review:/, '')}`.slice(0, MAX_EVENT_ID),
+    kind: KIND_SELF,
+    payload: { ...draft.payload, via: 'self' },
+  };
 }
 
 export function issueDraft(issue: IssueCandidate): SignalDraft {

@@ -5,7 +5,7 @@ import type { PollSummary, StreamSummary } from './poller.ts';
 
 export const MAX_HISTORY = 20;
 
-export type StreamName = 'review' | 'issue' | 'mention';
+export type StreamName = 'review' | 'issue' | 'mention' | 'selfPr';
 
 export interface KindStats {
   emitted: number;
@@ -34,7 +34,7 @@ export interface PollStats {
   history: PollSummary[];
 }
 
-const STREAMS: readonly StreamName[] = ['review', 'issue', 'mention'];
+const STREAMS: readonly StreamName[] = ['review', 'issue', 'mention', 'selfPr'];
 
 function emptyKind(): KindStats {
   return { emitted: 0, duplicates: 0, filtered: 0, skipped: 0, deferred: 0, errors: 0 };
@@ -49,7 +49,7 @@ export function emptyStats(): PollStats {
     skipped: 0,
     deferred: 0,
     errors: 0,
-    byKind: { review: emptyKind(), issue: emptyKind(), mention: emptyKind() },
+    byKind: { review: emptyKind(), issue: emptyKind(), mention: emptyKind(), selfPr: emptyKind() },
     history: [],
   };
 }
@@ -103,6 +103,7 @@ export function loadStats(file: string | undefined, logger?: FileLogger): PollSt
       review: loadKind(byKindValue.review),
       issue: loadKind(byKindValue.issue),
       mention: loadKind(byKindValue.mention),
+      selfPr: loadKind(byKindValue.selfPr),
     },
     history,
   };

@@ -39,6 +39,7 @@ const STYLES = `
 .dgm-toast[data-kind="code-review.requested"]{border-left-color:#7c5cd6}
 .dgm-toast[data-kind="github.issue.opened"]{border-left-color:#2f9e6b}
 .dgm-toast[data-kind="github.mention"]{border-left-color:#d08a1f}
+.dgm-toast[data-kind="github.pr.opened"]{border-left-color:#3a7bd5}
 .dgm-toast-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .dgm-toast-kind{font-size:11px;font-weight:600;letter-spacing:.02em;color:var(--dsw-alias-text-tertiary,#718096)}
 .dgm-toast-close{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;padding:0;border:0;border-radius:5px;background:transparent;color:var(--dsw-alias-text-tertiary,#718096);font:inherit;font-size:15px;line-height:1;cursor:pointer}

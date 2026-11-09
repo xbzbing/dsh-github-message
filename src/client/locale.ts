@@ -98,6 +98,7 @@ export const EN: Record<string, string> = {
   '待评审 PR': 'Review requests',
   '新 Issue': 'New issues',
   '@ 提醒': '@ mentions',
+  '自提 PR': 'My own PRs',
   '拉取': 'Fetched',
   '上报': 'Reported',
   '去重': 'Deduplicated',

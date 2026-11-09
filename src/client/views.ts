@@ -210,6 +210,7 @@ export function kindLabel(t: Translate, kind: string): string {
   if (kind === 'review') return t('待评审 PR');
   if (kind === 'issue') return t('新 Issue');
   if (kind === 'mention') return t('@ 提醒');
+  if (kind === 'selfPr') return t('自提 PR');
   return kind;
 }
 
@@ -261,7 +262,7 @@ export function streamStats(stats: Stats | undefined, name: string): KindStats {
 
 export function kindTable(t: Translate, stats: Stats | undefined): unknown {
   const rows: unknown[] = [];
-  for (const name of ['review', 'issue', 'mention']) {
+  for (const name of ['review', 'issue', 'mention', 'selfPr']) {
     const item = streamStats(stats, name);
     rows.push(h('tr', { key: name },
       h('td', null, kindLabel(t, name)),

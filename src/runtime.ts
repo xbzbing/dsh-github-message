@@ -144,6 +144,7 @@ function failureSummary(at: number, message: string): PollSummary {
     review: stream(),
     issue: stream(),
     mention: stream(),
+    selfPr: stream(),
     fetched: 0,
     emitted: 0,
     duplicates: 0,

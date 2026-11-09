@@ -119,6 +119,11 @@ function reviewHandler(sha = 'a'.repeat(40)) {
     if (request.endpoint === 'notifications') return { status: 200, headers: {}, body: '[]' };
     if (request.endpoint === 'user') return { status: 200, headers: {}, body: '{"login":"alice"}' };
     if (request.endpoint === 'search/issues') {
+      // 自提 PR 那条检索默认返回空：这个假件代表「只有别人请你评审」的常见场景，
+      // 自提 PR 由单独一条用例验证（ADR-0087）。
+      if (String(request.params?.q ?? '').includes('author:@me')) {
+        return { status: 200, headers: {}, body: '{"total_count":0,"items":[]}' };
+      }
       return {
         status: 200,
         headers: {},
@@ -154,7 +159,7 @@ function reviewHandler(sha = 'a'.repeat(40)) {
   };
 }
 
-test('注册来源：external 信任、三种 kind、feature 探测', async (t) => {
+test('注册来源：external 信任、四种 kind、feature 探测', async (t) => {
   const dir = tempDir(t);
   const runtime = runtimeOf(dir, new FakeTransport());
   const fake = fakeService(['github-source']);
@@ -163,7 +168,7 @@ test('注册来源：external 信任、三种 kind、feature 探测', async (t) 
     const provider = fake.provider();
     assert.equal(provider?.id, 'github-message');
     assert.deepEqual(provider?.protocol, ['my-superagent/v1']);
-    assert.deepEqual(provider?.kinds, ['code-review.requested', 'github.issue.opened', 'github.mention']);
+    assert.deepEqual(provider?.kinds, ['code-review.requested', 'github.issue.opened', 'github.mention', 'github.pr.opened']);
     assert.equal(provider?.trust, 'external');
 
     const status = runtime.status();
@@ -674,6 +679,57 @@ test('RPC 信封：status/config.set/未知方法', async (t) => {
       body: '{}',
     }));
     assert.equal(wrongType.status, 415);
+  } finally {
+    runtime.detach();
+  }
+});
+
+test('自己提的 PR 走独立流：信号 kind 是 github.pr.opened，事件 id 带 self 前缀', async (t) => {
+  const dir = tempDir(t);
+  // 待我评审那条返回空；author:@me 那条返回 alice 自己提的 PR #99。
+  const transport = new FakeTransport((request: GhRequest): GhResponse => {
+    if (request.endpoint === 'user') return { status: 200, headers: {}, body: '{"login":"alice"}' };
+    if (request.endpoint === 'notifications') return { status: 200, headers: {}, body: '[]' };
+    if (request.endpoint === 'search/issues') {
+      if (!String(request.params?.q ?? '').includes('author:@me')) {
+        return { status: 200, headers: {}, body: '{"total_count":0,"items":[]}' };
+      }
+      return {
+        status: 200,
+        headers: {},
+        body: JSON.stringify({
+          total_count: 1,
+          items: [{
+            number: 99,
+            title: '自己提的 PR',
+            html_url: 'https://github.com/o/r/pull/99',
+            repository_url: 'https://api.github.com/repos/o/r',
+            updated_at: '2026-11-09T03:21:53Z',
+            user: { login: 'alice' },
+            pull_request: { merged_at: null },
+          }],
+        }),
+      };
+    }
+    return {
+      status: 200,
+      headers: {},
+      body: JSON.stringify({
+        state: 'open', merged: false, draft: false, updated_at: '2026-11-09T03:21:53Z', title: '自己提的 PR',
+        html_url: 'https://github.com/o/r/pull/99', user: { login: 'alice' }, head: { sha: 'c'.repeat(40) },
+      }),
+    };
+  });
+  const runtime = runtimeOf(dir, transport);
+  const fake = fakeService(['github-source']);
+  try {
+    runtime.attach(fake.service);
+    await runtime.pollNow();
+    assert.equal(fake.drafts.length, 1, '只该由自提那条流产生信号');
+    assert.equal(fake.drafts[0]?.kind, 'github.pr.opened');
+    assert.equal(fake.drafts[0]?.subject, 'github:o/r/pull/99');
+    assert.match(String(fake.drafts[0]?.sourceEventId), /^self:/, '与「待我评审」用不同前缀，免得被当成同一条去重');
+    assert.equal(runtime.status().stats.byKind.selfPr.emitted, 1, '统计里自提 PR 单独一条流');
   } finally {
     runtime.detach();
   }
