@@ -3,6 +3,8 @@
 
 import * as React from 'react';
 
+import { Switch } from '@deepseek-ai/dsh-client-ui-primitives';
+
 import { MAX_CLIENT_INTERVAL_MINUTES, MIN_CLIENT_INTERVAL_MINUTES } from '../constants.ts';
 import type { Translate } from './locale.ts';
 import { card, formatInterval, formatTime } from './views.ts';
@@ -51,28 +53,29 @@ export function configCard(props: ConfigCardProps): unknown {
           h('h4', null, t('维护仓库')),
           h('p', { className: 'icm-note' },
             t('每行一个 owner/repo，最多 {max} 个。Issue 与 PR 的默认范围都从这里开始。', { max: maxRepos })),
-          h('label', { className: 'icm-check' },
-            h('input', {
-              type: 'checkbox',
-              checked: props.issueScope === 'owned',
-              onChange: (event: { target: { checked: boolean } }) => {
-                props.onIssueScope(event.target.checked ? 'owned' : 'repos');
-              },
-            }),
-            h('span', null, t('自动覆盖我名下的所有仓库'))),
-          h('p', { className: 'icm-hint' },
-            t('开启后还会查询当前账号名下的仓库，以及下面列出的组织；上面的仓库列表始终保留。')),
-          h('label', { className: 'icm-check' },
-            h('input', {
-              type: 'checkbox',
-              checked: props.prScope === 'owned',
-              onChange: (event: { target: { checked: boolean } }) => {
-                props.onPrScope(event.target.checked ? 'owned' : 'review');
-              },
-            }),
-            h('span', null, t('自动覆盖我名下仓库的新 PR'))),
-          h('p', { className: 'icm-hint' },
-            t('开启后会查询当前账号、组织与上面列出的仓库里别人开的 PR；需要核心同时打开「仓库自有 PR 评审」（review.repoPr），否则核心会忽略。')),
+          h('div', { className: 'icm-switch-list' },
+            h('div', { className: 'icm-switch-row' },
+              h('div', { className: 'icm-switch-copy' },
+                h('span', { className: 'icm-switch-title' }, t('自动覆盖我名下的所有仓库')),
+                h('p', { className: 'icm-hint' },
+                  t('开启后还会查询当前账号名下的仓库，以及下面列出的组织；上面的仓库列表始终保留。'))),
+              h(Switch, {
+                checked: props.issueScope === 'owned',
+                label: t('自动覆盖我名下的所有仓库'),
+                disabled: props.busy,
+                onChange: (next: boolean) => props.onIssueScope(next ? 'owned' : 'repos'),
+              })),
+            h('div', { className: 'icm-switch-row' },
+              h('div', { className: 'icm-switch-copy' },
+                h('span', { className: 'icm-switch-title' }, t('自动覆盖我名下仓库的新 PR')),
+                h('p', { className: 'icm-hint' },
+                  t('开启后会查询当前账号、组织与上面列出的仓库里别人开的 PR；需要核心同时打开「仓库自有 PR 评审」（review.repoPr），否则核心会忽略。'))),
+              h(Switch, {
+                checked: props.prScope === 'owned',
+                label: t('自动覆盖我名下仓库的新 PR'),
+                disabled: props.busy,
+                onChange: (next: boolean) => props.onPrScope(next ? 'owned' : 'review'),
+              }))),
           h('label', { className: 'icm-field' },
             h('span', null, t('仓库列表')),
             h('textarea', {
