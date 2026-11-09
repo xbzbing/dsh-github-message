@@ -394,33 +394,61 @@ test('dryRun 不推进 mention 游标与 ETag', async (t) => {
   }
 });
 
-test('setConfig 保存周期与仓库，校验非法值', async (t) => {
+test('setConfig 保存周期、仓库、Issue 范围与组织，校验非法值', async (t) => {
   const dir = tempDir(t);
   const runtime = runtimeOf(dir, new FakeTransport());
   const fake = fakeService(['github-source']);
+  const readConfig = (): { intervalMs?: number; repos?: string[]; issueScope?: string; orgs?: string[] } =>
+    JSON.parse(readFileSync(join(dir, 'config.json'), 'utf8')) as {
+      intervalMs?: number;
+      repos?: string[];
+      issueScope?: string;
+      orgs?: string[];
+    };
   try {
     runtime.attach(fake.service);
-    const status = runtime.setConfig({ intervalMs: 120_000, repos: ['o/r', 'O/R', 'o/two'] });
+    const status = runtime.setConfig({
+      intervalMs: 120_000,
+      repos: ['o/r', 'O/R', 'o/two'],
+      issueScope: 'owned',
+      orgs: ['my-org', 'MY-ORG'],
+    });
     assert.equal(status.config.intervalMs, 120_000);
     assert.deepEqual(status.config.repos, ['o/r', 'o/two']);
-    const saved = JSON.parse(readFileSync(join(dir, 'config.json'), 'utf8')) as { intervalMs?: number; repos?: string[] };
+    assert.equal(status.config.issueScope, 'owned');
+    assert.deepEqual(status.config.orgs, ['my-org']);
+    const saved = readConfig();
     assert.equal(saved.intervalMs, 120_000);
     assert.deepEqual(saved.repos, ['o/r', 'o/two']);
+    assert.equal(saved.issueScope, 'owned');
+    assert.deepEqual(saved.orgs, ['my-org']);
 
     runtime.setConfig({ intervalMs: 180_000 });
-    const afterInterval = JSON.parse(readFileSync(join(dir, 'config.json'), 'utf8')) as { intervalMs?: number; repos?: string[] };
+    const afterInterval = readConfig();
     assert.equal(afterInterval.intervalMs, 180_000);
     assert.deepEqual(afterInterval.repos, ['o/r', 'o/two']);
+    assert.equal(afterInterval.issueScope, 'owned');
+    assert.deepEqual(afterInterval.orgs, ['my-org']);
 
     runtime.setConfig({ repos: ['o/three'] });
-    const afterRepos = JSON.parse(readFileSync(join(dir, 'config.json'), 'utf8')) as { intervalMs?: number; repos?: string[] };
+    const afterRepos = readConfig();
     assert.equal(afterRepos.intervalMs, 180_000);
     assert.deepEqual(afterRepos.repos, ['o/three']);
+    assert.equal(afterRepos.issueScope, 'owned');
+    assert.deepEqual(afterRepos.orgs, ['my-org']);
+
+    runtime.setConfig({ issueScope: 'repos', orgs: ['other-org'] });
+    const afterScope = readConfig();
+    assert.equal(afterScope.issueScope, 'repos');
+    assert.deepEqual(afterScope.orgs, ['other-org']);
 
     assert.equal(runtime.setConfig({ intervalMs: 1_000 }).config.intervalMs, 60_000);
     assert.throws(() => runtime.setConfig({ intervalMs: 'soon' }), RuntimeConfigError);
     assert.throws(() => runtime.setConfig({ repos: ['bad'] }), RuntimeConfigError);
     assert.throws(() => runtime.setConfig({ repos: 'o/r' }), RuntimeConfigError);
+    assert.throws(() => runtime.setConfig({ issueScope: 'all' }), RuntimeConfigError);
+    assert.throws(() => runtime.setConfig({ orgs: 'my-org' }), RuntimeConfigError);
+    assert.throws(() => runtime.setConfig({ orgs: ['bad_org'] }), RuntimeConfigError);
   } finally {
     runtime.detach();
   }
@@ -663,7 +691,7 @@ test('RPC 信封：status/config.set/未知方法', async (t) => {
     assert.equal(ok.status, 200);
     const body = await ok.json() as { result?: { ok?: boolean; value?: { contractVersion?: number } } };
     assert.equal(body.result?.ok, true);
-    assert.equal(body.result?.value?.contractVersion, 2);
+    assert.equal(body.result?.value?.contractVersion, 3);
 
     const saved = await handleRpc(runtime, 'config.set', { intervalMs: 120_000 }) as { config?: { intervalMs?: number } };
     assert.equal(saved.config?.intervalMs, 120_000);

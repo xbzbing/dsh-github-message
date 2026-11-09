@@ -42,6 +42,7 @@ const h = React.createElement as unknown as (
 ) => unknown;
 
 const REPO_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const ORG_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
 
 interface Props {
   t: Translate;
@@ -78,11 +79,15 @@ export function GithubMessagePanel(props: Props): unknown {
   const [notice, setNotice] = useState('');
   const [intervalDraft, setIntervalDraft] = useState('5');
   const [reposDraft, setReposDraft] = useState('');
+  const [scopeDraft, setScopeDraft] = useState<'repos' | 'owned'>('repos');
+  const [orgsDraft, setOrgsDraft] = useState('');
   /** 折叠状态：默认只收起运行统计，其余展开。 */
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ stats: true });
   const mounted = useRef(true);
   const dirtyInterval = useRef(false);
   const dirtyRepos = useRef(false);
+  const dirtyScope = useRef(false);
+  const dirtyOrgs = useRef(false);
 
   const isOpen = (id: string): boolean => collapsed[id] !== true;
   const toggle = (id: string): void => {
@@ -97,6 +102,8 @@ export function GithubMessagePanel(props: Props): unknown {
       setStatus(next);
       if (!dirtyInterval.current) setIntervalDraft(minutesOf(next.config?.intervalMs));
       if (!dirtyRepos.current) setReposDraft((next.config?.repos ?? []).join('\n'));
+      if (!dirtyScope.current) setScopeDraft(next.config?.issueScope === 'owned' ? 'owned' : 'repos');
+      if (!dirtyOrgs.current) setOrgsDraft((next.config?.orgs ?? []).join('\n'));
       setError('');
     } catch (failure) {
       if (mounted.current) setError(t('读取状态失败：{error}', { error: errorText(failure) }));
@@ -155,6 +162,25 @@ export function GithubMessagePanel(props: Props): unknown {
       return;
     }
 
+    const orgLines = orgsDraft.split('\n').map((line) => line.trim()).filter((line) => line !== '');
+    const orgs: string[] = [];
+    for (const line of orgLines) {
+      if (!ORG_PATTERN.test(line)) {
+        // 组织列表只在 owned 模式生效；关闭时忽略非法行，避免隐藏字段阻塞保存。
+        if (scopeDraft === 'owned') {
+          setNotice(t('组织名不合法：{org}', { org: line }));
+          return;
+        }
+        continue;
+      }
+      if (!orgs.some((org) => org.toLowerCase() === line.toLowerCase())) orgs.push(line);
+    }
+    const maxOrgs = status?.config?.maxOrgs ?? 10;
+    if (scopeDraft === 'owned' && orgs.length > maxOrgs) {
+      setNotice(t('最多 {max} 个组织', { max: maxOrgs }));
+      return;
+    }
+
     const minutes = Number(intervalDraft);
     if (!Number.isFinite(minutes)) {
       setNotice(t('检查周期必须是数字'));
@@ -174,20 +200,26 @@ export function GithubMessagePanel(props: Props): unknown {
       const next = await rpcCall<Status>('config.set', {
         intervalMs: Math.round(minutes * 60_000),
         repos,
+        issueScope: scopeDraft,
+        orgs,
       });
       if (!mounted.current) return;
       setStatus(next);
       dirtyInterval.current = false;
       dirtyRepos.current = false;
+      dirtyScope.current = false;
+      dirtyOrgs.current = false;
       setIntervalDraft(minutesOf(next.config?.intervalMs));
       setReposDraft((next.config?.repos ?? []).join('\n'));
+      setScopeDraft(next.config?.issueScope === 'owned' ? 'owned' : 'repos');
+      setOrgsDraft((next.config?.orgs ?? []).join('\n'));
       setNotice(t('已保存轮询配置'));
     } catch (failure) {
       if (mounted.current) setNotice(t('操作失败：{error}', { error: errorText(failure) }));
     } finally {
       if (mounted.current) setBusy('');
     }
-  }, [intervalDraft, reposDraft, rpcCall, status?.config?.maxRepos, t]);
+  }, [intervalDraft, reposDraft, scopeDraft, orgsDraft, rpcCall, status?.config?.maxRepos, status?.config?.maxOrgs, t]);
 
   if (loading && status === null) {
     return h('div', { className: 'icm-panel' }, h('p', { className: 'icm-muted' }, t('正在读取…')));
@@ -305,9 +337,21 @@ export function GithubMessagePanel(props: Props): unknown {
             h('div', { className: 'icm-field-block' },
               h('h4', null, t('维护仓库')),
               h('p', { className: 'icm-note' },
-                t('每行一个 owner/repo，最多 {max} 个。新 Issue 只提醒这些仓库。', {
+                t('每行一个 owner/repo，最多 {max} 个。新 Issue 默认只提醒这些仓库。', {
                   max: config?.maxRepos ?? 10,
                 })),
+              h('label', { className: 'icm-check' },
+                h('input', {
+                  type: 'checkbox',
+                  checked: scopeDraft === 'owned',
+                  onChange: (event: { target: { checked: boolean } }) => {
+                    dirtyScope.current = true;
+                    setScopeDraft(event.target.checked ? 'owned' : 'repos');
+                  },
+                }),
+                h('span', null, t('自动覆盖我名下的所有仓库'))),
+              h('p', { className: 'icm-hint' },
+                t('开启后还会查询当前账号名下的仓库，以及下面列出的组织；上面的仓库列表始终保留。')),
               h('label', { className: 'icm-field' },
                 h('span', null, t('仓库列表')),
                 h('textarea', {
@@ -320,7 +364,25 @@ export function GithubMessagePanel(props: Props): unknown {
                     dirtyRepos.current = true;
                     setReposDraft(event.target.value);
                   },
-                }))),
+                })),
+              scopeDraft === 'owned'
+                ? h('div', null,
+                    h('label', { className: 'icm-field' },
+                      h('span', null, t('组织列表')),
+                      h('textarea', {
+                        className: 'icm-textarea',
+                        rows: 3,
+                        spellCheck: false,
+                        value: orgsDraft,
+                        placeholder: 'my-org',
+                        onChange: (event: { target: { value: string } }) => {
+                          dirtyOrgs.current = true;
+                          setOrgsDraft(event.target.value);
+                        },
+                      })),
+                    h('p', { className: 'icm-hint' },
+                      t('每行一个组织名，最多 {max} 个；核心回源时只提醒你有写权限的仓库。', { max: config?.maxOrgs ?? 10 })))
+                : null),
             h('div', { className: 'icm-field-block' },
               h('h4', null, t('检查周期')),
               h('p', { className: 'icm-note' },

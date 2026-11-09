@@ -27,7 +27,10 @@ const DAY = 24 * 60 * 60_000;
 const CONFIG: PollConfig = {
   windowMs: 7 * DAY,
   repos: ['xbzbing/dsh-my-superagent'],
+  issueScope: 'repos',
+  orgs: [],
   maxRepos: 10,
+  maxOrgs: 10,
   maxResults: 100,
   maxPages: 3,
   includeDrafts: true,
@@ -137,6 +140,38 @@ test('一轮同时产出 review、issue、mention 三类信号', async () => {
   assert.equal(byKind.get('github.mention')?.sourceEventId, 'mention:o/r#5:99');
   assert.equal(byKind.get('github.mention')?.payload?.commentId, '99');
   assert.ok(describeSummary(summary).includes('review 1/1'));
+});
+
+test('owned 模式仓库列表为空也查 user:@me 与组织', async () => {
+  const gh = new FakeGh((request) => {
+    if (request.endpoint === 'search/issues') {
+      const query = String(request.params?.q ?? '');
+      if (query === REVIEW_QUERY) return searchPage([]);
+      if (query.includes('author:@me')) return searchPage([]);
+      if (query.startsWith('user:@me')) {
+        return searchPage([issueSearchItem({ repository_url: 'https://api.github.com/repos/alice/owned', number: 11 })]);
+      }
+      if (query.startsWith('org:my-org')) {
+        return searchPage([issueSearchItem({ repository_url: 'https://api.github.com/repos/my-org/project', number: 12 })]);
+      }
+      return searchPage([]);
+    }
+    if (request.endpoint === 'notifications') return jsonResponse([]);
+    throw new Error(`unexpected ${request.endpoint}`);
+  });
+  const drafts: SignalDraft[] = [];
+  const summary = await pollOnce(depsOf(gh, drafts, new MemorySeen(), {
+    repos: [],
+    orgs: ['my-org'],
+    issueScope: 'owned',
+    mentionMode: 'off',
+  }));
+  assert.equal(summary.issue.emitted, 2);
+  assert.deepEqual(drafts.map((draft) => draft.sourceEventId).sort(), [
+    'issue:alice/owned#11',
+    'issue:my-org/project#12',
+  ]);
+  assert.equal(summary.errors.length, 0);
 });
 
 test('同一事实第二轮不再上报', async () => {

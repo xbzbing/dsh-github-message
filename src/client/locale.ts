@@ -66,14 +66,22 @@ export const EN: Record<string, string> = {
     'When the source is off on the Superagent Sources page, signals are not stored; the next poll catches up after you enable it.',
 
   '维护仓库': 'Maintained repositories',
-  '每行一个 owner/repo，最多 {max} 个。新 Issue 只提醒这些仓库。':
-    'One owner/repo per line, up to {max}. New issues are only reported for these repositories.',
+  '每行一个 owner/repo，最多 {max} 个。新 Issue 默认只提醒这些仓库。':
+    'One owner/repo per line, up to {max}. New issues are reported for these repositories by default.',
+  '自动覆盖我名下的所有仓库': 'Automatically cover all repositories I own',
+  '开启后还会查询当前账号名下的仓库，以及下面列出的组织；上面的仓库列表始终保留。':
+    'When enabled, also queries repositories owned by the current account plus the organizations listed below; the repository list above is always kept.',
   '仓库列表': 'Repositories',
+  '组织列表': 'Organizations',
+  '每行一个组织名，最多 {max} 个；核心回源时只提醒你有写权限的仓库。':
+    'One organization per line, up to {max}; the core only notifies for repositories you can write to.',
   '保存配置': 'Save settings',
   '已保存轮询配置': 'Polling settings saved',
   '失败退避': 'Backoff',
   '仓库名不合法：{repo}': 'Invalid repository: {repo}',
   '最多 {max} 个仓库': 'At most {max} repositories',
+  '组织名不合法：{org}': 'Invalid organization: {org}',
+  '最多 {max} 个组织': 'At most {max} organizations',
 
   '保存中…': 'Saving…',
   '来源': 'Source',

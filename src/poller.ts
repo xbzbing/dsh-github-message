@@ -1,7 +1,7 @@
 // 轮询编排：三路各自独立拉取、过滤、翻译、上报；一个流失败不影响另外两个。
 // 去重分两层：本轮内 Set；跨轮询用 SeenLike（默认持久化到 seen.json）。
 
-import type { MentionMode } from './config.ts';
+import type { IssueScope, MentionMode } from './config.ts';
 import type { GhTransport } from './gh.ts';
 import {
   fetchMentionCandidates,
@@ -49,7 +49,10 @@ export interface PollLogger {
 export interface PollConfig {
   windowMs: number;
   repos: string[];
+  issueScope: IssueScope;
+  orgs: string[];
   maxRepos: number;
+  maxOrgs: number;
   maxResults: number;
   maxPages: number;
   includeDrafts: boolean;
@@ -268,12 +271,16 @@ async function runSelfPulls(deps: PollDeps, now: number, summary: PollSummary, s
 async function runIssues(deps: PollDeps, now: number, summary: PollSummary, seen: Set<string>, flags: { sourceDisabled: boolean }): Promise<void> {
   if (deps.isActive !== undefined && !deps.isActive()) return;
   const repos = deps.config.repos.slice(0, deps.config.maxRepos);
-  if (repos.length === 0) return;
+  const orgs = deps.config.orgs.slice(0, deps.config.maxOrgs);
+  // owned 模式即使仓库列表为空也要跑 user:@me；repos 模式没有仓库就没有来源。
+  if (deps.config.issueScope === 'repos' && repos.length === 0) return;
   const sinceMs = deps.config.windowMs > 0 ? now - deps.config.windowMs : 0;
   let result;
   try {
     result = await fetchIssueCandidates(deps.client, {
       repos,
+      orgs,
+      scope: deps.config.issueScope,
       sinceMs,
       maxResults: deps.config.maxResults,
       maxPages: deps.config.maxPages,
@@ -371,7 +378,10 @@ export function describeSummary(summary: PollSummary): string {
 export function pollConfigOf(config: {
   windowMs: number;
   repos: string[];
+  issueScope: IssueScope;
+  orgs: string[];
   maxRepos: number;
+  maxOrgs: number;
   maxResults: number;
   maxPages: number;
   includeDrafts: boolean;
@@ -386,7 +396,10 @@ export function pollConfigOf(config: {
   return {
     windowMs: config.windowMs,
     repos: [...config.repos],
+    issueScope: config.issueScope,
+    orgs: [...config.orgs],
     maxRepos: config.maxRepos,
+    maxOrgs: config.maxOrgs,
     maxResults: config.maxResults,
     maxPages: config.maxPages,
     includeDrafts: config.includeDrafts,

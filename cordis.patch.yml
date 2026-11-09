@@ -6,4 +6,6 @@
       # id 追加 config；patch 的 config 是整体替换，请把要保留的键都写上。
       config:
         intervalMs: 300000
+        issueScope: repos
         repos: []
+        orgs: []

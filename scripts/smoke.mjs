@@ -37,16 +37,20 @@ summarize('review', await fetchReviewCandidates(client, {
 }));
 
 const repos = (process.env.DSH_SMOKE_REPOS ?? '').split(',').map((repo) => repo.trim()).filter((repo) => repo !== '');
-if (repos.length > 0) {
+const orgs = (process.env.DSH_SMOKE_ORGS ?? '').split(',').map((org) => org.trim()).filter((org) => org !== '');
+const scope = process.env.DSH_SMOKE_ISSUE_SCOPE === 'owned' ? 'owned' : 'repos';
+if (repos.length > 0 || scope === 'owned') {
   summarize('issue', await fetchIssueCandidates(client, {
     repos,
+    orgs,
+    scope,
     sinceMs,
     maxResults: 5,
     maxPages: 1,
     timeoutMs,
   }));
 } else {
-  process.stdout.write('issue: 跳过（设置 DSH_SMOKE_REPOS=owner/repo 可测试）\n');
+  process.stdout.write('issue: 跳过（设置 DSH_SMOKE_REPOS=owner/repo 或 DSH_SMOKE_ISSUE_SCOPE=owned 可测试）\n');
 }
 
 summarize('mention', await fetchMentionCandidates(client, {

@@ -105,7 +105,10 @@ export interface Status {
     intervalMinutes?: number;
     windowMs?: number;
     repos?: string[];
+    issueScope?: string;
+    orgs?: string[];
     maxRepos?: number;
+    maxOrgs?: number;
     maxResults?: number;
     maxPages?: number;
     includeDrafts?: boolean;

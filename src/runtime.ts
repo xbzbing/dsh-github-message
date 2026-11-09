@@ -2,9 +2,12 @@
 // 调度用 setTimeout 链而不是 setInterval，便于按限流/轮询间隔动态调整下一轮。
 
 import {
+  ISSUE_SCOPES,
   MAX_INTERVAL_MS,
   MIN_INTERVAL_MS,
+  normalizeOrg,
   normalizeRepo,
+  type IssueScope,
   type MentionMode,
   type ResolvedConfig,
 } from './config.ts';
@@ -93,7 +96,10 @@ export interface StatusSnapshot {
     intervalMinutes: number;
     windowMs: number;
     repos: string[];
+    issueScope: IssueScope;
+    orgs: string[];
     maxRepos: number;
+    maxOrgs: number;
     maxResults: number;
     maxPages: number;
     includeDrafts: boolean;
@@ -117,9 +123,9 @@ export interface StatusSnapshot {
 }
 
 export class RuntimeConfigError extends Error {
-  readonly code: 'invalid-interval' | 'invalid-repos';
+  readonly code: 'invalid-interval' | 'invalid-repos' | 'invalid-orgs' | 'invalid-issue-scope';
 
-  constructor(code: 'invalid-interval' | 'invalid-repos', message: string) {
+  constructor(code: 'invalid-interval' | 'invalid-repos' | 'invalid-orgs' | 'invalid-issue-scope', message: string) {
     super(message);
     this.name = 'RuntimeConfigError';
     this.code = code;
@@ -372,7 +378,7 @@ export class GithubMessageRuntime {
     }
   }
 
-  /** 面板保存周期与仓库列表；持久化并立即重排定时器。 */
+  /** 面板保存周期、仓库、Issue 范围与组织；持久化，周期变化时重排定时器。 */
   setConfig(payload: unknown): StatusSnapshot {
     const input = payload !== null && typeof payload === 'object' && !Array.isArray(payload)
       ? payload as Record<string, unknown>
@@ -405,13 +411,42 @@ export class GithubMessageRuntime {
       }
     }
 
+    let issueScope = this.config.issueScope;
+    if (input.issueScope !== undefined) {
+      const scope = typeof input.issueScope === 'string'
+        ? ISSUE_SCOPES.find((candidate) => candidate === input.issueScope)
+        : undefined;
+      if (scope === undefined) throw new RuntimeConfigError('invalid-issue-scope', 'Issue 范围必须是 repos 或 owned');
+      issueScope = scope;
+    }
+
+    let orgs = this.config.orgs;
+    if (input.orgs !== undefined) {
+      if (!Array.isArray(input.orgs)) throw new RuntimeConfigError('invalid-orgs', '组织列表必须是数组');
+      const seen = new Set<string>();
+      const parsed: string[] = [];
+      for (const item of input.orgs) {
+        const org = normalizeOrg(item);
+        if (org === undefined) throw new RuntimeConfigError('invalid-orgs', `${JSON.stringify(item)} 不是合法的组织名`);
+        if (seen.has(org.toLowerCase())) continue;
+        seen.add(org.toLowerCase());
+        parsed.push(org);
+      }
+      orgs = parsed.slice(0, this.config.maxOrgs);
+      if (parsed.length > this.config.maxOrgs) {
+        this.logger.warn?.(`组织列表有 ${parsed.length} 个，超过上限 ${this.config.maxOrgs}，只保留前 ${this.config.maxOrgs} 个`);
+      }
+    }
+
     const changedInterval = intervalMs !== this.config.intervalMs;
-    this.config = { ...this.config, intervalMs, repos: [...repos] };
+    this.config = { ...this.config, intervalMs, repos: [...repos], issueScope, orgs: [...orgs] };
     // 只持久化用户这次真正改过的字段，避免保存周期时把 patch 里的仓库列表一起钉死。
-    const update: { intervalMs?: number; repos?: string[] } = {};
+    const update: { intervalMs?: number; repos?: string[]; issueScope?: IssueScope; orgs?: string[] } = {};
     if (input.intervalMs !== undefined) update.intervalMs = intervalMs;
     if (input.repos !== undefined) update.repos = [...repos];
-    if (update.intervalMs !== undefined || update.repos !== undefined) {
+    if (input.issueScope !== undefined) update.issueScope = issueScope;
+    if (input.orgs !== undefined) update.orgs = [...orgs];
+    if (Object.keys(update).length > 0) {
       const existing = loadRuntimeConfig(this.config.runtimeConfigFile, this.logger);
       saveRuntimeConfig(this.config.runtimeConfigFile, { ...existing, ...update }, this.logger);
     }
@@ -528,7 +563,10 @@ export class GithubMessageRuntime {
         intervalMinutes: this.config.intervalMs / 60_000,
         windowMs: this.config.windowMs,
         repos: [...this.config.repos],
+        issueScope: this.config.issueScope,
+        orgs: [...this.config.orgs],
         maxRepos: this.config.maxRepos,
+        maxOrgs: this.config.maxOrgs,
         maxResults: this.config.maxResults,
         maxPages: this.config.maxPages,
         includeDrafts: this.config.includeDrafts,

@@ -40,13 +40,14 @@ profile 没开 HMR 的话还要重启 dsh。
 ## 功能
 
 - **待评审 PR**：`review-requested:@me` 的 open PR，按 head 提交去重；同一 PR 推新 commit 才算新事实。
-- **新 Issue**：只盯「维护仓库」列表里的仓库，按创建时间提醒一次。
+- **新 Issue**：默认只盯「维护仓库」列表；开启 `issueScope: owned` 后，还会按 `user:@me` 覆盖我名下的仓库，
+  并逐个查询 `orgs` 里列出的组织。按创建时间提醒一次。
 - **@ 提醒**：走 Notifications（`reason=mention|team_mention`），拿不到时降级为 `mentions:@me` 搜索；按评论 id 去重。
 - **轮询节奏**：默认 5 分钟，可配 1 分钟～24 小时；实际间隔取配置与 GitHub `X-Poll-Interval` 的较大者，
   失败指数退避（最长 30 分钟），限流时等到 `X-RateLimit-Reset`。
 - **本地提示**：未接入超级助理时，新消息在右下角弹卡片（最多 4 张、12 秒消失、可点开 GitHub）；
   每条只弹一次，记录写 `notified.json` 而不写 `seen`，之后接入核心仍会重新上报。
-- **配置页**：登录状态、核心能力、仓库列表与检查周期（共用一个保存按钮）、三路统计与核心信号；卡片可折叠。
+- **配置页**：登录状态、核心能力、仓库/组织列表、Issue 范围与检查周期（共用一个保存按钮）、三路统计与核心信号；卡片可折叠。
 - **中英双语**：跟随 DSH 语言设置。
 
 ## 信号契约
@@ -54,7 +55,7 @@ profile 没开 HMR 的话还要重启 dsh。
 | kind | subject | sourceEventId | 触发 |
 | --- | --- | --- | --- |
 | `code-review.requested` | `github:<owner>/<repo>/pull/<n>` | `review:<repo>#<n>:<headSha>` | PR 请求我（或团队）评审 |
-| `github.issue.opened` | `github:<owner>/<repo>/issues/<n>` | `issue:<repo>#<n>` | 维护仓库有新 Issue |
+| `github.issue.opened` | `github:<owner>/<repo>/issues/<n>` | `issue:<repo>#<n>` | 仓库列表、自有仓库或组织仓库有新 Issue |
 | `github.mention` | `github:<owner>/<repo>/issues/<n>` | `mention:<repo>#<n>:<commentId\|body>` | Issue/PR/评论里 @ 我或团队 |
 
 - `repo` 在事件键中小写归一化，展示保留 GitHub 返回的大小写。
@@ -83,8 +84,11 @@ profile 没开 HMR 的话还要重启 dsh。
   config:
     intervalMs: 300000
     windowMs: 604800000
+    issueScope: owned
     repos:
       - xbzbing/dsh-my-superagent
+    orgs:
+      - my-org
     mentionMode: notifications
 ```
 
@@ -92,8 +96,11 @@ profile 没开 HMR 的话还要重启 dsh。
 | --- | --- | --- |
 | `intervalMs` | `300000`（5 分钟） | 轮询间隔；最小 60 秒，最大 24 小时。实际间隔取本值与 GitHub `X-Poll-Interval` 的较大者 |
 | `windowMs` | `604800000`（7 天） | review/issue/mention 首轮与过滤窗口；`0` 表示不过滤 |
-| `repos` | `[]` | 维护中的仓库列表，`owner/repo`；issue 流必填 |
+| `repos` | `[]` | 维护中的仓库列表，`owner/repo`；`issueScope=repos` 时 issue 流至少需要一个 |
+| `issueScope` | `repos` | `repos` 只查仓库列表；`owned` 额外查 `user:@me` 与 `orgs`，仓库列表仍保留 |
+| `orgs` | `[]` | 组织名列表，仅 `issueScope=owned` 时生效；逐个查 `org:<name>` |
 | `maxRepos` | `10` | 单轮最多查多少个仓库（1–10） |
+| `maxOrgs` | `10` | 单轮最多查多少个组织（1–10） |
 | `maxResults` | `100` | 单流单轮最多处理多少条（1–100） |
 | `maxPages` | `3` | 每个搜索最多翻几页（1–10） |
 | `includeDrafts` | `true` | 是否提醒 draft PR |
@@ -109,7 +116,7 @@ profile 没开 HMR 的话还要重启 dsh。
 | `statsFile` | `$DSH_HOME/dsh-github-message/stats.json` | 累计统计；`false` 只在内存 |
 | `runtimeConfigFile` | `$DSH_HOME/dsh-github-message/config.json` | 面板保存的运行时配置；`false` 不持久化 |
 
-面板保存的周期与仓库列表写入 `config.json`，**优先于** Cordis patch；删掉该文件即可回到 patch 默认值。
+面板保存的周期、仓库、Issue 范围与组织列表写入 `config.json`，**优先于** Cordis patch；删掉该文件即可回到 patch 默认值。
 
 ## 开发
 

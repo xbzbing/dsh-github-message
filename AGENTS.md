@@ -6,7 +6,8 @@
 用本机 `gh` 只读轮询 GitHub，把三类事实翻译成 `my-superagent/v1` 信号。
 
 1. **review**：待我评审的 PR（`review-requested:@me`）。
-2. **issue**：我维护的仓库里新开的 Issue，提醒主人「是否分析」。
+2. **issue**：我维护的仓库、我名下的仓库或我指定的组织里新开的 Issue，提醒主人「是否分析」。
+   默认 `issueScope: repos` 只查维护列表；`owned` 额外用 `user:@me` 与 `orgs` 覆盖自有仓库和组织。
 3. **mention**：有人 @ 我或我所在的团队。
 
 插件只做「采集 → 翻译 → 上报」。**评审、Issue 分析、评论/写回、决定要不要打扰主人，全部由
@@ -38,7 +39,8 @@
 ```text
 GitHub API (gh api, read-only)
   ├─ search/issues: review-requested:@me
-  ├─ search/issues: repo:<owner>/<repo> is:issue created:>=
+  ├─ search/issues: repo:<owner>/<repo> is:issue created:>=（issueScope=repos）
+  ├─ search/issues: user:@me / org:<org> is:issue created:>=（issueScope=owned）
   └─ notifications: reason=mention|team_mention（降级 search mentions:@me）
         │
         ▼
