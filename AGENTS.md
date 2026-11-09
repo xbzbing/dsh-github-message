@@ -19,7 +19,8 @@
 - [docs/plan/01-可行性研究与开发计划.md](docs/plan/01-可行性研究与开发计划.md)
 - [docs/plan/02-开发计划-三路提醒.md](docs/plan/02-开发计划-三路提醒.md)
 - [docs/adr/](docs/adr/)：重要决策记录
-- 核心改动提案：[dsh-my-superagent issue #1](https://github.com/xbzbing/dsh-my-superagent/issues/1)（P1 已完成）
+- 核心改动提案：[dsh-my-superagent issue #1](https://github.com/xbzbing/dsh-my-superagent/issues/1)（P1 已完成）、
+  [issue #2](https://github.com/xbzbing/dsh-my-superagent/issues/2)（仓库自有 PR 评审 `review.repoPr`）
 
 本地调研、临时记录、个人脚本一律放 `docs/local/`（已 gitignore），不要入仓。
 
@@ -126,7 +127,7 @@ gh api 'notifications?all=true&per_page=1' --include
 
 - 核心 P1 已支持 `github:` subject 与 `github-source` feature；旧核心仍会走 dry-run。
   Issue 分析、评审任务与写回属于核心后续阶段，不是插件故障。
-- 仓库自有 PR 需要核心的 `review.repoPr`（默认关）：见
-  [docs/proposal/02-核心提案-仓库自有PR评审.md](docs/proposal/02-核心提案-仓库自有PR评审.md)。
+- 仓库自有 PR 需要核心的 `review.repoPr`（默认关）：提案见
+  [dsh-my-superagent#2](https://github.com/xbzbing/dsh-my-superagent/issues/2)。
   核心未实现时，`prScope: owned` 上报的 `github.pr.repo` 会被旧核心判 `unverified-external` 并忽略，不是插件故障。
 - 面板的「核心信号」统计只读 `$DSH_HOME/dsh-my-superagent/state.sqlite`，读不到就降级。
