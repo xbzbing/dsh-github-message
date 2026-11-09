@@ -48,6 +48,9 @@ export const STYLES = `
 .icm-btn:disabled{opacity:.55;cursor:not-allowed}
 .icm-btn--primary{border-color:var(--icm-accent);background:var(--icm-accent);color:#fff}
 .icm-btn:focus-visible,.icm-input:focus-visible,.icm-textarea:focus-visible{outline:2px solid var(--icm-accent);outline-offset:2px}
+.icm-check{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:12px;cursor:pointer;user-select:none}
+.icm-check input{flex:none;width:14px;height:14px;margin:0;accent-color:var(--icm-accent);cursor:pointer}
+.icm-check:focus-within{outline:2px solid var(--icm-accent);outline-offset:3px;border-radius:4px}
 .icm-field{display:flex;flex-direction:column;gap:6px;margin-top:12px;font-size:12px}
 .icm-input,.icm-textarea{min-height:32px;padding:5px 9px;border:1px solid var(--icm-border);border-radius:7px;background:var(--icm-surface);color:inherit;font:inherit;font-size:13px;width:100%}
 .icm-textarea{min-height:110px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.6}

@@ -5,6 +5,7 @@
 import { createGhClient } from '../src/gh.ts';
 import { probeLogin } from '../src/login.ts';
 import { fetchMentionCandidates } from '../src/notifications.ts';
+import { ownedPullSources } from '../src/pull-scope.ts';
 import { fetchIssueCandidates, fetchReviewCandidates } from '../src/search.ts';
 
 const DAY = 24 * 60 * 60_000;
@@ -37,16 +38,20 @@ summarize('review', await fetchReviewCandidates(client, {
 }));
 
 const repos = (process.env.DSH_SMOKE_REPOS ?? '').split(',').map((repo) => repo.trim()).filter((repo) => repo !== '');
-if (repos.length > 0) {
+const orgs = (process.env.DSH_SMOKE_ORGS ?? '').split(',').map((org) => org.trim()).filter((org) => org !== '');
+const scope = process.env.DSH_SMOKE_ISSUE_SCOPE === 'owned' ? 'owned' : 'repos';
+if (repos.length > 0 || scope === 'owned') {
   summarize('issue', await fetchIssueCandidates(client, {
     repos,
+    orgs,
+    scope,
     sinceMs,
     maxResults: 5,
     maxPages: 1,
     timeoutMs,
   }));
 } else {
-  process.stdout.write('issue: 跳过（设置 DSH_SMOKE_REPOS=owner/repo 可测试）\n');
+  process.stdout.write('issue: 跳过（设置 DSH_SMOKE_REPOS=owner/repo 或 DSH_SMOKE_ISSUE_SCOPE=owned 可测试）\n');
 }
 
 summarize('mention', await fetchMentionCandidates(client, {
@@ -56,3 +61,25 @@ summarize('mention', await fetchMentionCandidates(client, {
   timeoutMs,
   ...(login.username === undefined ? {} : { login: login.username }),
 }));
+
+if (process.env.DSH_SMOKE_PR_SCOPE === 'owned') {
+  const { queries } = ownedPullSources({ repos, orgs });
+  const loginName = login.username?.toLowerCase();
+  for (const query of queries.slice(0, 4)) {
+    const result = await fetchReviewCandidates(client, {
+      query,
+      sinceMs,
+      maxResults: 5,
+      maxPages: 1,
+      includeDrafts: true,
+      timeoutMs,
+    });
+    const others = result.candidates.filter((item) => item.author?.toLowerCase() !== loginName);
+    process.stdout.write(`repo-pr [${query}]: 拉取 ${result.fetched}，别人开的 ${others.length}，过滤 ${result.filtered}\n`);
+    for (const candidate of others.slice(0, 5)) {
+      process.stdout.write(`  - ${candidate.repo} #${candidate.number} ${candidate.title}\n`);
+    }
+  }
+} else {
+  process.stdout.write('repo-pr: 跳过（设置 DSH_SMOKE_PR_SCOPE=owned 可测试自有仓库 PR）\n');
+}

@@ -2,10 +2,13 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { GhError } from '../src/gh.ts';
+import { orgPullQuery, ownedPullSources, OWNED_PULL_QUERY, repoPullQuery } from '../src/pull-scope.ts';
 import {
   fetchIssueCandidates,
   fetchReviewCandidates,
   issueQuery,
+  orgIssueQuery,
+  ownedIssueQuery,
   PullCache,
   REVIEW_QUERY,
 } from '../src/search.ts';
@@ -120,6 +123,8 @@ test('issue 查询按仓库、排除 PR、过滤窗口外', async () => {
   ]));
   const result = await fetchIssueCandidates(gh, {
     repos: ['xbzbing/dsh-my-superagent'],
+    orgs: [],
+    scope: 'repos',
     sinceMs: SINCE,
     maxResults: 10,
     maxPages: 3,
@@ -131,6 +136,8 @@ test('issue 查询按仓库、排除 PR、过滤窗口外', async () => {
   assert.equal(result.filtered, 3);
   assert.ok(issueQuery('xbzbing/dsh-my-superagent', SINCE).includes('created:>=2026-10-31'));
   assert.equal(issueQuery('o/r', 0), 'repo:o/r is:issue is:open');
+  assert.equal(ownedIssueQuery(0), 'user:@me is:issue is:open');
+  assert.equal(orgIssueQuery('my-org', 0), 'org:my-org is:issue is:open');
 });
 
 test('issue 单个仓库失败不影响其他仓库', async () => {
@@ -142,6 +149,8 @@ test('issue 单个仓库失败不影响其他仓库', async () => {
   });
   const result = await fetchIssueCandidates(gh, {
     repos: ['o/one', 'o/two'],
+    orgs: [],
+    scope: 'repos',
     sinceMs: 0,
     maxResults: 10,
     maxPages: 1,
@@ -167,12 +176,112 @@ test('issue 多仓库按创建时间归并，不被第一个仓库占满预算',
   });
   const result = await fetchIssueCandidates(gh, {
     repos: ['o/one', 'o/two'],
+    orgs: [],
+    scope: 'repos',
     sinceMs: 0,
     maxResults: 2,
     maxPages: 1,
     timeoutMs: 1_000,
   });
   assert.deepEqual(result.candidates.map((item) => item.number), [3, 2]);
+});
+
+test('owned 模式查 user:@me 与组织，并按 repo#number 跨来源去重', async () => {
+  const gh = new FakeGh((request) => {
+    const query = String(request.params?.q ?? '');
+    if (query.startsWith('user:@me')) {
+      return searchPage([
+        issueSearchItem({ repository_url: 'https://api.github.com/repos/alice/one', number: 1, created_at: '2026-11-05T00:00:00Z' }),
+        issueSearchItem({ repository_url: 'https://api.github.com/repos/alice/two', number: 2, created_at: '2026-11-04T00:00:00Z' }),
+      ]);
+    }
+    if (query.startsWith('org:my-org')) {
+      return searchPage([
+        issueSearchItem({ repository_url: 'https://api.github.com/repos/my-org/three', number: 3, created_at: '2026-11-06T00:00:00Z' }),
+        // 组织查询里串进个人仓库，应被 owner 校验过滤。
+        issueSearchItem({ repository_url: 'https://api.github.com/repos/alice/one', number: 9 }),
+      ]);
+    }
+    if (query.startsWith('repo:alice/one')) {
+      return searchPage([
+        issueSearchItem({ repository_url: 'https://api.github.com/repos/alice/one', number: 1, created_at: '2026-11-05T00:00:00Z' }),
+      ]);
+    }
+    return searchPage([]);
+  });
+  const result = await fetchIssueCandidates(gh, {
+    repos: ['alice/one'],
+    orgs: ['my-org'],
+    scope: 'owned',
+    sinceMs: 0,
+    maxResults: 10,
+    maxPages: 1,
+    timeoutMs: 1_000,
+  });
+  assert.deepEqual(result.candidates.map((item) => `${item.repo}#${item.number}`), [
+    'my-org/three#3',
+    'alice/one#1',
+    'alice/two#2',
+  ]);
+  // 组织查询里的 alice/one#9 被 owner 过滤；显式仓库重复的 alice/one#1 被跨来源去重。
+  assert.equal(result.filtered, 2);
+  const queries = gh.calls.map((call) => String(call.params?.q ?? ''));
+  assert.deepEqual(queries, [
+    ownedIssueQuery(0),
+    orgIssueQuery('my-org', 0),
+    issueQuery('alice/one', 0),
+  ]);
+});
+
+test('ownedPullSources 先查 user:@me，再组织与显式仓库，非法项计 skipped', () => {
+  const { queries, skipped } = ownedPullSources({
+    repos: ['alice/one', 'bad'],
+    orgs: ['my-org', 'bad_org'],
+  });
+  assert.deepEqual(queries, [
+    OWNED_PULL_QUERY,
+    orgPullQuery('my-org'),
+    repoPullQuery('alice/one'),
+  ]);
+  assert.equal(skipped, 2);
+});
+
+test('ownedPullSources 大小写不敏感去重，仓库为空也保留 user:@me', () => {
+  const { queries } = ownedPullSources({
+    repos: ['alice/one'],
+    orgs: [],
+  });
+  assert.deepEqual(queries, [OWNED_PULL_QUERY, repoPullQuery('alice/one')]);
+  assert.deepEqual(ownedPullSources({ repos: [], orgs: [] }).queries, [OWNED_PULL_QUERY]);
+});
+
+test('repos 模式忽略 orgs，只查仓库列表', async () => {
+  const gh = new FakeGh(() => searchPage([]));
+  await fetchIssueCandidates(gh, {
+    repos: ['o/r'],
+    orgs: ['my-org'],
+    scope: 'repos',
+    sinceMs: 0,
+    maxResults: 10,
+    maxPages: 1,
+    timeoutMs: 1_000,
+  });
+  assert.deepEqual(gh.calls.map((call) => String(call.params?.q ?? '')), [issueQuery('o/r', 0)]);
+});
+
+test('owned 模式跳过非法组织名，不拼进搜索语句', async () => {
+  const gh = new FakeGh(() => searchPage([]));
+  const result = await fetchIssueCandidates(gh, {
+    repos: [],
+    orgs: ['bad_org'],
+    scope: 'owned',
+    sinceMs: 0,
+    maxResults: 10,
+    maxPages: 1,
+    timeoutMs: 1_000,
+  });
+  assert.equal(result.skipped, 1);
+  assert.deepEqual(gh.calls.map((call) => String(call.params?.q ?? '')), [ownedIssueQuery(0)]);
 });
 
 test('坏记录计入 skipped，不中断整页', async () => {
@@ -182,6 +291,8 @@ test('坏记录计入 skipped，不中断整页', async () => {
   ]));
   const result = await fetchIssueCandidates(gh, {
     repos: ['xbzbing/dsh-my-superagent'],
+    orgs: [],
+    scope: 'repos',
     sinceMs: 0,
     maxResults: 10,
     maxPages: 1,

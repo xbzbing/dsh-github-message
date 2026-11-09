@@ -6,6 +6,16 @@ import { join } from 'node:path';
 export const MENTION_MODES = ['notifications', 'search', 'off'] as const;
 export type MentionMode = (typeof MENTION_MODES)[number];
 
+/** Issue 流的取数范围：只查仓库列表，或额外自动覆盖账号名下仓库与组织。 */
+export const ISSUE_SCOPES = ['repos', 'owned'] as const;
+export type IssueScope = (typeof ISSUE_SCOPES)[number];
+export const DEFAULT_ISSUE_SCOPE: IssueScope = 'repos';
+
+/** PR 流的取数范围：只查待我评审，或额外覆盖自有仓库/组织/显式仓库里别人开的 PR。 */
+export const PR_SCOPES = ['review', 'owned'] as const;
+export type PrScope = (typeof PR_SCOPES)[number];
+export const DEFAULT_PR_SCOPE: PrScope = 'review';
+
 export const DEFAULT_INTERVAL_MS = 5 * 60_000; // 5 分钟
 export const DEFAULT_WINDOW_MS = 7 * 24 * 60 * 60_000; // 7 天
 export const MIN_INTERVAL_MS = 60_000;
@@ -13,6 +23,8 @@ export const MIN_INTERVAL_MS = 60_000;
 export const MAX_INTERVAL_MS = 24 * 60 * 60_000;
 export const DEFAULT_MAX_REPOS = 10;
 export const MAX_REPOS_LIMIT = 10;
+export const DEFAULT_MAX_ORGS = 10;
+export const MAX_ORGS_LIMIT = 10;
 export const DEFAULT_MAX_RESULTS = 100;
 export const DEFAULT_MAX_PAGES = 3;
 export const DEFAULT_TIMEOUT_MS = 20_000;
@@ -22,6 +34,9 @@ export const DEFAULT_SEEN_MAX_ENTRIES = 20_000;
 /** GitHub 的 owner/repo 允许字母、数字、下划线、点、连字符。 */
 export const REPO_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
+/** GitHub 组织名：字母数字开头结尾，中间可含连字符，最长 39 个字符。 */
+export const ORG_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
+
 export interface ResolvedConfig {
   /** 两次轮询之间的间隔。默认 5 分钟。 */
   intervalMs: number;
@@ -29,8 +44,16 @@ export interface ResolvedConfig {
   windowMs: number;
   /** 维护中的仓库列表（owner/repo），issue 流的主体。 */
   repos: string[];
+  /** issue 流范围：`repos` 只查仓库列表；`owned` 额外查当前账号与 orgs。 */
+  issueScope: IssueScope;
+  /** PR 流范围：`review` 只查待我评审；`owned` 额外查当前账号、orgs 与仓库列表。 */
+  prScope: PrScope;
+  /** 组织列表；`issueScope=owned` 或 `prScope=owned` 时生效。 */
+  orgs: string[];
   /** 单轮最多查多少个仓库。 */
   maxRepos: number;
+  /** 单轮最多查多少个组织。 */
+  maxOrgs: number;
   /** 单个流单轮最多处理多少条。 */
   maxResults: number;
   /** 每个搜索最多翻几页。 */
@@ -57,7 +80,7 @@ export interface ResolvedConfig {
   logFile?: string;
   /** 轮询统计；false 表示只在内存里累计。 */
   statsFile?: string;
-  /** 面板修改的运行时配置（周期、仓库）；false 表示不持久化。 */
+  /** 面板修改的运行时配置（周期、仓库、Issue 范围、组织）；false 表示不持久化。 */
   runtimeConfigFile?: string;
   /** 插件自己的数据目录。 */
   dataDir: string;
@@ -118,6 +141,56 @@ export function parseRepos(value: unknown, warnings: string[] = []): string[] {
   return repos;
 }
 
+/** 规范化组织名：去空白；不合法返回 undefined。展示保留原大小写。 */
+export function normalizeOrg(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return ORG_PATTERN.test(trimmed) ? trimmed : undefined;
+}
+
+/** 组织列表：逐项校验、大小写不敏感去重；非法项写 warning。 */
+export function parseOrgs(value: unknown, warnings: string[] = []): string[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    warnings.push('orgs 必须是组织名字符串数组，已忽略');
+    return [];
+  }
+  const seen = new Set<string>();
+  const orgs: string[] = [];
+  for (const item of value) {
+    const org = normalizeOrg(item);
+    if (org === undefined) {
+      warnings.push(`orgs 里的 ${JSON.stringify(item)} 不是合法的组织名，已忽略`);
+      continue;
+    }
+    const key = org.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    orgs.push(org);
+  }
+  return orgs;
+}
+
+function parseIssueScope(value: unknown, warnings: string[]): IssueScope {
+  if (value === undefined || value === null) return DEFAULT_ISSUE_SCOPE;
+  if (typeof value === 'string') {
+    const candidate = ISSUE_SCOPES.find((scope) => scope === value);
+    if (candidate !== undefined) return candidate;
+  }
+  warnings.push(`issueScope=${JSON.stringify(value)} 不合法，已改用 repos`);
+  return DEFAULT_ISSUE_SCOPE;
+}
+
+function parsePrScope(value: unknown, warnings: string[]): PrScope {
+  if (value === undefined || value === null) return DEFAULT_PR_SCOPE;
+  if (typeof value === 'string') {
+    const candidate = PR_SCOPES.find((scope) => scope === value);
+    if (candidate !== undefined) return candidate;
+  }
+  warnings.push(`prScope=${JSON.stringify(value)} 不合法，已改用 review`);
+  return DEFAULT_PR_SCOPE;
+}
+
 export function dataDirectory(raw: Record<string, unknown>, env: ResolveEnv): string {
   const configured = text(raw.dataDir);
   if (configured !== undefined) return configured;
@@ -158,6 +231,15 @@ export function resolveConfig(raw: unknown, env: ResolveEnv, warnings: string[] 
     repos = repos.slice(0, maxRepos);
   }
 
+  const issueScope = parseIssueScope(input.issueScope, warnings);
+  const prScope = parsePrScope(input.prScope, warnings);
+  const maxOrgs = Math.trunc(clamp(finite(input.maxOrgs) ?? DEFAULT_MAX_ORGS, 1, MAX_ORGS_LIMIT));
+  let orgs = parseOrgs(input.orgs, warnings);
+  if (orgs.length > maxOrgs) {
+    warnings.push(`orgs 有 ${orgs.length} 个，超过 maxOrgs=${maxOrgs}，只保留前 ${maxOrgs} 个`);
+    orgs = orgs.slice(0, maxOrgs);
+  }
+
   const maxResults = Math.trunc(clamp(finite(input.maxResults) ?? DEFAULT_MAX_RESULTS, 1, 100));
   const maxPages = Math.trunc(clamp(finite(input.maxPages) ?? DEFAULT_MAX_PAGES, 1, 10));
   const timeoutMs = Math.trunc(clamp(positive(input.timeoutMs) ?? DEFAULT_TIMEOUT_MS, 1_000, 120_000));
@@ -196,7 +278,11 @@ export function resolveConfig(raw: unknown, env: ResolveEnv, warnings: string[] 
     intervalMs,
     windowMs,
     repos,
+    issueScope,
+    prScope,
+    orgs,
     maxRepos,
+    maxOrgs,
     maxResults,
     maxPages,
     includeDrafts: input.includeDrafts !== false,

@@ -1,7 +1,7 @@
 // 把三类 GitHub 事实翻译成 my-superagent/v1 的 SignalDraft。
 // 这里只做字段收敛与截断，不做“要不要打扰主人”的判断。
 
-import { KIND_ISSUE, KIND_MENTION, KIND_REVIEW, KIND_SELF } from './constants.ts';
+import { KIND_ISSUE, KIND_MENTION, KIND_REPO, KIND_REVIEW, KIND_SELF } from './constants.ts';
 import type { MentionCandidate } from './notifications.ts';
 import type { IssueCandidate, ReviewCandidate } from './search.ts';
 import { cleanText, githubUrl, repoKey } from './text.ts';
@@ -70,16 +70,25 @@ export function reviewDraft(review: ReviewCandidate): SignalDraft {
   return draft;
 }
 
-// 自己提的 PR（ADR-0087）：字段收敛与 reviewDraft 一样，只换 kind 与 sourceEventId 前缀，
-// 免得两类信号在核心侧被当成同一条去重掉。
-export function selfPullDraft(review: ReviewCandidate): SignalDraft {
+// 自己提的 PR（ADR-0087）与自有仓库里别人开的 PR（ADR-0007）字段收敛一样，
+// 只换 kind 与事件键前缀，免得两类信号在核心侧被当成同一条去重掉。
+function pullDraftWith(review: ReviewCandidate, kind: string, prefix: 'self' | 'repo', via: 'self' | 'repo-owned'): SignalDraft {
   const draft = reviewDraft(review);
   return {
     ...draft,
-    sourceEventId: `self:${draft.sourceEventId.replace(/^review:/, '')}`.slice(0, MAX_EVENT_ID),
-    kind: KIND_SELF,
-    payload: { ...draft.payload, via: 'self' },
+    sourceEventId: `${prefix}:${draft.sourceEventId.replace(/^review:/, '')}`.slice(0, MAX_EVENT_ID),
+    kind,
+    payload: { ...draft.payload, via },
   };
+}
+
+export function selfPullDraft(review: ReviewCandidate): SignalDraft {
+  return pullDraftWith(review, KIND_SELF, 'self', 'self');
+}
+
+// 自有仓库里别人开的 PR（ADR-0007）：独立 kind，核心按作者与仓库权限分流。
+export function repoPullDraft(review: ReviewCandidate): SignalDraft {
+  return pullDraftWith(review, KIND_REPO, 'repo', 'repo-owned');
 }
 
 export function issueDraft(issue: IssueCandidate): SignalDraft {

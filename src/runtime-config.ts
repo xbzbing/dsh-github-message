@@ -1,11 +1,14 @@
 // 面板修改的运行时配置。只持久化用户能改的字段，Cordis patch 仍是其余配置的来源。
 
-import { normalizeRepo } from './config.ts';
+import { ISSUE_SCOPES, PR_SCOPES, normalizeOrg, normalizeRepo, type IssueScope, type PrScope } from './config.ts';
 import { readJsonFile, writeJsonFile, type FileLogger } from './json-file.ts';
 
 export interface RuntimeConfigFile {
   intervalMs?: number;
   repos?: string[];
+  issueScope?: IssueScope;
+  prScope?: PrScope;
+  orgs?: string[];
 }
 
 export function loadRuntimeConfig(file: string | undefined, logger?: FileLogger): RuntimeConfigFile {
@@ -23,6 +26,27 @@ export function loadRuntimeConfig(file: string | undefined, logger?: FileLogger)
       if (repo !== undefined) repos.push(repo);
     }
     result.repos = repos;
+  }
+  if (typeof value.issueScope === 'string') {
+    const scope = ISSUE_SCOPES.find((candidate) => candidate === value.issueScope);
+    if (scope !== undefined) result.issueScope = scope;
+  }
+  if (typeof value.prScope === 'string') {
+    const scope = PR_SCOPES.find((candidate) => candidate === value.prScope);
+    if (scope !== undefined) result.prScope = scope;
+  }
+  if (Array.isArray(value.orgs)) {
+    const seen = new Set<string>();
+    const orgs: string[] = [];
+    for (const item of value.orgs) {
+      const org = normalizeOrg(item);
+      if (org === undefined) continue;
+      const key = org.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      orgs.push(org);
+    }
+    result.orgs = orgs;
   }
   return result;
 }

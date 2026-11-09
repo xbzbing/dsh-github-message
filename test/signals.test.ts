@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { issueDraft, mentionDraft, reviewDraft } from '../src/signals.ts';
+import { issueDraft, mentionDraft, repoPullDraft, reviewDraft, selfPullDraft } from '../src/signals.ts';
 
 const SHA = 'a'.repeat(40);
 
@@ -23,6 +23,29 @@ test('review 信号：subject、事件键、actor 与链接', () => {
   assert.equal(draft.actor?.id, 'alice');
   assert.deepEqual(draft.links, [{ title: '查看 PR', url: 'https://github.com/Xbzbing/Dsh-Git-Panel/pull/12' }]);
   assert.equal(draft.payload?.via, 'search');
+});
+
+test('自有仓库 PR 用独立 kind，与自提 PR 的事件键前缀也不同', () => {
+  const candidate = {
+    repo: 'alice/project',
+    number: 8,
+    title: '别人在我仓库里提的 PR',
+    author: 'bob',
+    headSha: SHA,
+    baseRef: 'main',
+    draft: false,
+    updatedAt: Date.parse('2026-11-08T08:00:00Z'),
+    url: 'https://github.com/alice/project/pull/8',
+  };
+  const repo = repoPullDraft(candidate);
+  const self = selfPullDraft(candidate);
+  assert.equal(repo.kind, 'github.pr.repo');
+  assert.equal(self.kind, 'github.pr.opened');
+  assert.equal(repo.sourceEventId, `repo:alice/project#8:${SHA}`);
+  assert.equal(self.sourceEventId, `self:alice/project#8:${SHA}`);
+  assert.equal(repo.payload?.via, 'repo-owned');
+  assert.equal(self.payload?.via, 'self');
+  assert.equal(repo.subject, 'github:alice/project/pull/8');
 });
 
 test('issue 信号：标签清洗与非法链接不输出', () => {

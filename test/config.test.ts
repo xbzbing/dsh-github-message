@@ -3,11 +3,16 @@ import { test } from 'node:test';
 
 import {
   DEFAULT_INTERVAL_MS,
+  DEFAULT_ISSUE_SCOPE,
+  DEFAULT_MAX_ORGS,
   DEFAULT_MAX_REPOS,
+  DEFAULT_PR_SCOPE,
   DEFAULT_WINDOW_MS,
   MAX_INTERVAL_MS,
   MIN_INTERVAL_MS,
+  normalizeOrg,
   normalizeRepo,
+  parseOrgs,
   parseRepos,
   resolveConfig,
 } from '../src/config.ts';
@@ -19,7 +24,10 @@ test('默认配置：5 分钟、7 天、空仓库列表', () => {
   assert.equal(config.intervalMs, DEFAULT_INTERVAL_MS);
   assert.equal(config.windowMs, DEFAULT_WINDOW_MS);
   assert.deepEqual(config.repos, []);
+  assert.equal(config.issueScope, DEFAULT_ISSUE_SCOPE);
+  assert.deepEqual(config.orgs, []);
   assert.equal(config.maxRepos, DEFAULT_MAX_REPOS);
+  assert.equal(config.maxOrgs, DEFAULT_MAX_ORGS);
   assert.equal(config.maxResults, 100);
   assert.equal(config.maxPages, 3);
   assert.equal(config.includeDrafts, true);
@@ -73,6 +81,41 @@ test('仓库名校验、去重与上限', () => {
   const capped = resolveConfig({ repos: many, maxRepos: 50 }, ENV);
   assert.equal(capped.maxRepos, 10);
   assert.equal(capped.repos.length, 10);
+});
+
+test('issueScope 与组织名校验、去重与上限', () => {
+  assert.equal(normalizeOrg(' my-org '), 'my-org');
+  assert.equal(normalizeOrg('a'), 'a');
+  assert.equal(normalizeOrg('-bad'), undefined);
+  assert.equal(normalizeOrg('bad-'), undefined);
+  assert.equal(normalizeOrg('bad_org'), undefined);
+  assert.equal(normalizeOrg(''), undefined);
+
+  const warnings: string[] = [];
+  const orgs = parseOrgs(['My-Org', 'my-org', 'bad_org', 'other'], warnings);
+  assert.deepEqual(orgs, ['My-Org', 'other']);
+  assert.equal(warnings.length, 1);
+
+  assert.equal(resolveConfig({ issueScope: 'owned' }, ENV).issueScope, 'owned');
+  assert.equal(resolveConfig({ issueScope: 'all' }, ENV, warnings).issueScope, DEFAULT_ISSUE_SCOPE);
+  assert.ok(warnings.some((warning) => warning.includes('issueScope')));
+
+  const many = Array.from({ length: 12 }, (_, index) => `org-${index}`);
+  const limited = resolveConfig({ orgs: many, maxOrgs: 3 }, ENV, warnings);
+  assert.deepEqual(limited.orgs, many.slice(0, 3));
+  assert.ok(warnings.some((warning) => warning.includes('maxOrgs')));
+
+  const capped = resolveConfig({ orgs: many, maxOrgs: 50 }, ENV);
+  assert.equal(capped.maxOrgs, 10);
+  assert.equal(capped.orgs.length, 10);
+});
+
+test('prScope 默认 review，非法值降级', () => {
+  assert.equal(resolveConfig({}, ENV).prScope, DEFAULT_PR_SCOPE);
+  assert.equal(resolveConfig({ prScope: 'owned' }, ENV).prScope, 'owned');
+  const warnings: string[] = [];
+  assert.equal(resolveConfig({ prScope: 'all' }, ENV, warnings).prScope, 'review');
+  assert.ok(warnings.some((warning) => warning.includes('prScope')));
 });
 
 test('mentionMode 非法值降级，off/search 保留', () => {

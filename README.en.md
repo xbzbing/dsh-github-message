@@ -43,9 +43,13 @@ Client-only updates take effect after a page refresh; versions with host changes
 
 ## Features
 
+- **PRs in my repositories**: with `prScope: owned`, also queries open PRs by others via `user:@me`, `orgs` and the watch
+  list, reported as `github.pr.repo` (PRs you authored stay on the self stream). Deduplicated by head commit.
 - **Review requests**: open PRs from `review-requested:@me`, deduplicated by head commit; a new commit on the same PR
   is a new fact.
-- **New issues**: only for repositories in the watch list, reported once by creation time.
+- **New issues**: by default only for repositories in the watch list; with `issueScope: owned`, also covers all
+  repositories owned by the current account (`user:@me`) plus the organizations listed in `orgs`. Reported once by
+  creation time.
 - **@ mentions**: via Notifications (`reason=mention|team_mention`), falling back to `mentions:@me` search;
   deduplicated by comment id.
 - **Polling cadence**: 5 minutes by default, configurable from 1 minute to 24 hours; the effective delay is the larger
@@ -54,8 +58,8 @@ Client-only updates take effect after a page refresh; versions with host changes
 - **Local notices**: without Superagent, new messages pop up in the bottom-right corner (at most 4 cards, 12 seconds,
   click through to GitHub). Each fact is shown once and recorded in `notified.json`, never in `seen`, so connecting the
   core later still reports it.
-- **Settings page**: login state, core capability, watch list and interval (one shared save button), per-stream stats
-  and core signals; cards collapse.
+- **Settings page**: login state, core capability, repository/organization lists, issue scope and interval (one shared
+  save button), per-stream stats and core signals; cards collapse.
 - **Bilingual**: follows the DSH language setting.
 
 ## Signal contract
@@ -63,7 +67,9 @@ Client-only updates take effect after a page refresh; versions with host changes
 | kind | subject | sourceEventId | Trigger |
 | --- | --- | --- | --- |
 | `code-review.requested` | `github:<owner>/<repo>/pull/<n>` | `review:<repo>#<n>:<headSha>` | A PR requests my (or my team's) review |
-| `github.issue.opened` | `github:<owner>/<repo>/issues/<n>` | `issue:<repo>#<n>` | A watched repository gets a new issue |
+| `github.pr.opened` | `github:<owner>/<repo>/pull/<n>` | `self:<repo>#<n>:<headSha>` | A PR I opened (core gates it with `review.selfPr`) |
+| `github.pr.repo` | `github:<owner>/<repo>/pull/<n>` | `repo:<repo>#<n>:<headSha>` | A PR by someone else in my repository (`prScope=owned`; core gates it with `review.repoPr`) |
+| `github.issue.opened` | `github:<owner>/<repo>/issues/<n>` | `issue:<repo>#<n>` | A watched, owned or organization repository gets a new issue |
 | `github.mention` | `github:<owner>/<repo>/issues/<n>` | `mention:<repo>#<n>:<commentId\|body>` | Someone mentions me or my team |
 
 - `repo` is lower-cased in event keys; display keeps the casing GitHub returns.
@@ -95,8 +101,12 @@ id (patch `config` replaces the whole object, so repeat every key you want to ke
   config:
     intervalMs: 300000
     windowMs: 604800000
+    issueScope: owned
+    prScope: owned
     repos:
       - xbzbing/dsh-my-superagent
+    orgs:
+      - my-org
     mentionMode: notifications
 ```
 
@@ -104,8 +114,12 @@ id (patch `config` replaces the whole object, so repeat every key you want to ke
 | --- | --- | --- |
 | `intervalMs` | `300000` (5 min) | Poll interval; 60 s to 24 h. The effective delay is the larger of this and GitHub `X-Poll-Interval` |
 | `windowMs` | `604800000` (7 days) | First-run and filter window for review/issue/mention; `0` disables filtering |
-| `repos` | `[]` | Watched repositories, `owner/repo`; required by the issue stream |
+| `repos` | `[]` | Watched repositories, `owner/repo`; the issue stream needs at least one when `issueScope=repos` |
+| `issueScope` | `repos` | `repos` only queries the watch list; `owned` also queries `user:@me` and `orgs`, keeping the watch list |
+| `prScope` | `review` | `review` only queries review requests; `owned` also covers PRs by others via `user:@me`, `orgs` and the watch list |
+| `orgs` | `[]` | Organization names; used when `issueScope=owned` or `prScope=owned`, one `org:<name>` query each |
 | `maxRepos` | `10` | Repositories per poll (1–10) |
+| `maxOrgs` | `10` | Organizations per poll (1–10) |
 | `maxResults` | `100` | Items per stream per poll (1–100) |
 | `maxPages` | `3` | Search pages per stream (1–10) |
 | `includeDrafts` | `true` | Whether draft PRs are reported |
@@ -121,8 +135,8 @@ id (patch `config` replaces the whole object, so repeat every key you want to ke
 | `statsFile` | `$DSH_HOME/dsh-github-message/stats.json` | Accumulated stats; `false` keeps them in memory |
 | `runtimeConfigFile` | `$DSH_HOME/dsh-github-message/config.json` | Runtime config saved by the panel; `false` disables persistence |
 
-The interval and watch list saved from the panel go to `config.json` and **win over** the Cordis patch; delete that file
-to fall back to the patch defaults.
+The interval, watch list, issue scope and organization list saved from the panel go to `config.json` and **win over** the
+Cordis patch; delete that file to fall back to the patch defaults.
 
 ## Development
 

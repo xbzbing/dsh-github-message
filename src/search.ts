@@ -1,6 +1,7 @@
-// GitHub 只读查询：待我评审的 PR、维护仓库的新 Issue。
+// GitHub 只读查询：待我评审的 PR，以及仓库列表 / 自有仓库 / 组织里的新 Issue。
 // 搜索接口一次最多 100 条；PR 详情补一次 head SHA，用于按提交版本去重。
 
+import { ORG_PATTERN, type IssueScope } from './config.ts';
 import { GhError, type GhTransport } from './gh.ts';
 import {
   cleanText,
@@ -59,6 +60,8 @@ export interface ReviewOptions {
 
 export interface IssueOptions {
   repos: string[];
+  orgs: string[];
+  scope: IssueScope;
   sinceMs: number;
   maxResults: number;
   maxPages: number;
@@ -326,13 +329,65 @@ export async function fetchReviewCandidates(
   return result;
 }
 
-export function issueQuery(repo: string, sinceMs: number): string {
-  const parts = [`repo:${repo}`, 'is:issue', 'is:open'];
+const DAY_MS = 24 * 60 * 60_000;
+
+function issueQueryWith(qualifier: string, sinceMs: number): string {
+  const parts = [qualifier, 'is:issue', 'is:open'];
   if (sinceMs > 0) {
     // 日期限定精确到天；多取一天，再用 created_at 精确过滤，避免时区导致漏报。
-    parts.push(`created:>=${searchDate(sinceMs - 24 * 60 * 60_000)}`);
+    parts.push(`created:>=${searchDate(sinceMs - DAY_MS)}`);
   }
   return parts.join(' ');
+}
+
+export function issueQuery(repo: string, sinceMs: number): string {
+  return issueQueryWith(`repo:${repo}`, sinceMs);
+}
+
+/** 当前账号名下的仓库；`user:@me` 是 GitHub search 的仓库 owner 限定。 */
+export function ownedIssueQuery(sinceMs: number): string {
+  return issueQueryWith('user:@me', sinceMs);
+}
+
+/** 指定组织名下的仓库。 */
+export function orgIssueQuery(org: string, sinceMs: number): string {
+  return issueQueryWith(`org:${org}`, sinceMs);
+}
+
+interface IssueSource {
+  kind: 'repo' | 'owned' | 'org';
+  value: string;
+  query: string;
+}
+
+/** `owned` 模式先查账号名下仓库与组织，再叠加显式仓库；`repos` 模式只看显式仓库。 */
+function issueSources(options: IssueOptions): { sources: IssueSource[]; skipped: number } {
+  const sources: IssueSource[] = [];
+  let skipped = 0;
+  if (options.scope === 'owned') {
+    sources.push({ kind: 'owned', value: '@me', query: ownedIssueQuery(options.sinceMs) });
+    for (const org of options.orgs) {
+      // 配置层已校验；这里再挡一次，避免直接调用时把任意字符串拼进搜索语句。
+      if (!ORG_PATTERN.test(org)) {
+        skipped += 1;
+        continue;
+      }
+      sources.push({ kind: 'org', value: org, query: orgIssueQuery(org, options.sinceMs) });
+    }
+  }
+  for (const repo of options.repos) {
+    sources.push({ kind: 'repo', value: repo, query: issueQuery(repo, options.sinceMs) });
+  }
+  return { sources, skipped };
+}
+
+function matchesIssueSource(source: IssueSource, repo: string): boolean {
+  if (source.kind === 'owned') return true;
+  const lower = repo.toLowerCase();
+  if (source.kind === 'repo') return lower === source.value.toLowerCase();
+  // 组织查询按 owner 再校验一次，避免把搜索结果里串进来的个人仓库当组织仓库。
+  const owner = splitRepo(repo)?.owner;
+  return owner !== undefined && owner.toLowerCase() === source.value.toLowerCase();
 }
 
 export async function fetchIssueCandidates(
@@ -340,22 +395,24 @@ export async function fetchIssueCandidates(
   options: IssueOptions,
 ): Promise<StreamResult<IssueCandidate>> {
   const result = emptyResult<IssueCandidate>();
-  if (options.repos.length === 0) return result;
+  const { sources, skipped } = issueSources(options);
+  result.skipped += skipped;
+  if (sources.length === 0) return result;
   const perPage = Math.min(100, options.maxResults);
   const collected: IssueCandidate[] = [];
+  const collectedKeys = new Set<string>();
 
-  for (const repo of options.repos) {
-    if (splitRepo(repo) === undefined) {
+  for (const source of sources) {
+    if (source.kind === 'repo' && splitRepo(source.value) === undefined) {
       result.skipped += 1;
       continue;
     }
-    let repoCount = 0;
-    const query = issueQuery(repo, options.sinceMs);
+    let sourceCount = 0;
     for (let page = 1; page <= options.maxPages; page += 1) {
       let items: unknown[];
       let totalCount: number;
       try {
-        const response = await searchPage(client, query, page, perPage, 'created', options.timeoutMs);
+        const response = await searchPage(client, source.query, page, perPage, 'created', options.timeoutMs);
         items = response.items;
         totalCount = response.totalCount;
       } catch (error) {
@@ -365,13 +422,13 @@ export async function fetchIssueCandidates(
       result.fetched += items.length;
 
       for (const raw of items) {
-        if (repoCount >= options.maxResults) break;
+        if (sourceCount >= options.maxResults) break;
         const item = parseSearchItem(raw);
         if (item === undefined) {
           result.skipped += 1;
           continue;
         }
-        if (item.isPull || item.repo.toLowerCase() !== repo.toLowerCase()) {
+        if (item.isPull || !matchesIssueSource(source, item.repo)) {
           result.filtered += 1;
           continue;
         }
@@ -379,6 +436,13 @@ export async function fetchIssueCandidates(
           result.filtered += 1;
           continue;
         }
+        // user:@me、org:<name> 与显式仓库可能覆盖同一 Issue，跨来源按 repo#number 去重。
+        const key = `${item.repo.toLowerCase()}#${item.number}`;
+        if (collectedKeys.has(key)) {
+          result.filtered += 1;
+          continue;
+        }
+        collectedKeys.add(key);
         collected.push({
           repo: item.repo,
           number: item.number,
@@ -388,16 +452,16 @@ export async function fetchIssueCandidates(
           createdAt: item.createdAt,
           url: item.url ?? `https://github.com/${item.repo}/issues/${item.number}`,
         });
-        repoCount += 1;
+        sourceCount += 1;
       }
 
       if (items.length < perPage) break;
-      if (repoCount >= options.maxResults) break;
+      if (sourceCount >= options.maxResults) break;
       if (page * perPage >= Math.min(totalCount, 1000)) break;
     }
   }
 
-  // 每个仓库都先取自己的候选，再按创建时间归并，避免第一个仓库占满全局预算。
+  // 每个来源都先取自己的候选，再按创建时间归并，避免第一个来源占满全局预算。
   result.candidates = collected
     .sort((left, right) => right.createdAt - left.createdAt)
     .slice(0, options.maxResults);

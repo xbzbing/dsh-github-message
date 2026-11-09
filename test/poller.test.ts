@@ -9,6 +9,7 @@ import {
   type PollConfig,
   type SourceHandleLike,
 } from '../src/poller.ts';
+import { OWNED_PULL_QUERY } from '../src/pull-scope.ts';
 import { REVIEW_QUERY } from '../src/search.ts';
 import type { SignalDraft } from '../src/signals.ts';
 import { MemorySeen } from '../src/state.ts';
@@ -27,7 +28,11 @@ const DAY = 24 * 60 * 60_000;
 const CONFIG: PollConfig = {
   windowMs: 7 * DAY,
   repos: ['xbzbing/dsh-my-superagent'],
+  issueScope: 'repos',
+  prScope: 'review',
+  orgs: [],
   maxRepos: 10,
+  maxOrgs: 10,
   maxResults: 100,
   maxPages: 3,
   includeDrafts: true,
@@ -137,6 +142,38 @@ test('一轮同时产出 review、issue、mention 三类信号', async () => {
   assert.equal(byKind.get('github.mention')?.sourceEventId, 'mention:o/r#5:99');
   assert.equal(byKind.get('github.mention')?.payload?.commentId, '99');
   assert.ok(describeSummary(summary).includes('review 1/1'));
+});
+
+test('owned 模式仓库列表为空也查 user:@me 与组织', async () => {
+  const gh = new FakeGh((request) => {
+    if (request.endpoint === 'search/issues') {
+      const query = String(request.params?.q ?? '');
+      if (query === REVIEW_QUERY) return searchPage([]);
+      if (query.includes('author:@me')) return searchPage([]);
+      if (query.startsWith('user:@me')) {
+        return searchPage([issueSearchItem({ repository_url: 'https://api.github.com/repos/alice/owned', number: 11 })]);
+      }
+      if (query.startsWith('org:my-org')) {
+        return searchPage([issueSearchItem({ repository_url: 'https://api.github.com/repos/my-org/project', number: 12 })]);
+      }
+      return searchPage([]);
+    }
+    if (request.endpoint === 'notifications') return jsonResponse([]);
+    throw new Error(`unexpected ${request.endpoint}`);
+  });
+  const drafts: SignalDraft[] = [];
+  const summary = await pollOnce(depsOf(gh, drafts, new MemorySeen(), {
+    repos: [],
+    orgs: ['my-org'],
+    issueScope: 'owned',
+    mentionMode: 'off',
+  }));
+  assert.equal(summary.issue.emitted, 2);
+  assert.deepEqual(drafts.map((draft) => draft.sourceEventId).sort(), [
+    'issue:alice/owned#11',
+    'issue:my-org/project#12',
+  ]);
+  assert.equal(summary.errors.length, 0);
 });
 
 test('同一事实第二轮不再上报', async () => {
@@ -296,6 +333,62 @@ test('401 让整轮标记未认证，但其他流仍执行', async () => {
   const summary = await pollOnce(depsOf(gh, drafts));
   assert.equal(summary.authenticated, false);
   assert.equal(summary.emitted, 2);
+});
+
+test('prScope=owned 查自有仓库 PR，跳过自己的 PR 并按 repo#number 去重', async () => {
+  const gh = new FakeGh((request) => {
+    const query = String(request.params?.q ?? '');
+    if (request.endpoint === 'search/issues') {
+      if (query === REVIEW_QUERY) return searchPage([]);
+      if (query.includes('author:@me')) return searchPage([]);
+      if (query === OWNED_PULL_QUERY) {
+        return searchPage([
+          prSearchItem({ number: 7, user: { login: 'bob' } }),
+          prSearchItem({ number: 8, user: { login: 'alice' } }),
+        ]);
+      }
+      if (query.includes('repo:alice/project') && query.includes('is:pr')) {
+        return searchPage([prSearchItem({ number: 7, user: { login: 'bob' } })]);
+      }
+      return searchPage([]);
+    }
+    if (request.endpoint === 'notifications') return jsonResponse([]);
+    const match = /\/pulls\/(\d+)$/.exec(request.endpoint);
+    const number = match === null ? 0 : Number(match[1]);
+    return jsonResponse(prDetail({
+      number,
+      head: { sha: (number === 8 ? 'b' : 'a').repeat(40), ref: 'f' },
+      user: { login: number === 8 ? 'alice' : 'bob' },
+    }));
+  });
+  const drafts: SignalDraft[] = [];
+  const summary = await pollOnce(depsOf(gh, drafts, new MemorySeen(), {
+    repos: ['alice/project'],
+    orgs: [],
+    prScope: 'owned',
+    issueScope: 'repos',
+    mentionMode: 'off',
+  }));
+
+  assert.equal(summary.repoPr.emitted, 1);
+  assert.equal(drafts.length, 1);
+  assert.equal(drafts[0]?.kind, 'github.pr.repo');
+  assert.match(String(drafts[0]?.sourceEventId), /^repo:/);
+  assert.equal(drafts[0]?.payload?.via, 'repo-owned');
+  // alice 自己的 #8 被过滤；显式仓库重复命中 #7 计入 filtered。
+  assert.equal(summary.repoPr.filtered >= 2, true);
+  assert.equal(summary.errors.length, 0);
+});
+
+test('prScope=review 不发起自有仓库查询', async () => {
+  const gh = new FakeGh((request) => {
+    if (request.endpoint === 'search/issues') return searchPage([]);
+    throw new Error(`unexpected ${request.endpoint}`);
+  });
+  await pollOnce(depsOf(gh, [], new MemorySeen(), { repos: [], prScope: 'review', mentionMode: 'off' }));
+  const queries = gh.calls.map((call) => String(call.params?.q ?? ''));
+  assert.equal(queries.includes(OWNED_PULL_QUERY), false);
+  assert.equal(queries.some((query) => query.startsWith('repo:')), false);
 });
 
 test('mentionMode=off 不请求 notifications', async () => {
