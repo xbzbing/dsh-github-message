@@ -43,6 +43,8 @@ Client-only updates take effect after a page refresh; versions with host changes
 
 ## Features
 
+- **PRs in my repositories**: with `prScope: owned`, also queries open PRs by others via `user:@me`, `orgs` and the watch
+  list, reported as `github.pr.repo` (PRs you authored stay on the self stream). Deduplicated by head commit.
 - **Review requests**: open PRs from `review-requested:@me`, deduplicated by head commit; a new commit on the same PR
   is a new fact.
 - **New issues**: by default only for repositories in the watch list; with `issueScope: owned`, also covers all
@@ -65,6 +67,8 @@ Client-only updates take effect after a page refresh; versions with host changes
 | kind | subject | sourceEventId | Trigger |
 | --- | --- | --- | --- |
 | `code-review.requested` | `github:<owner>/<repo>/pull/<n>` | `review:<repo>#<n>:<headSha>` | A PR requests my (or my team's) review |
+| `github.pr.opened` | `github:<owner>/<repo>/pull/<n>` | `self:<repo>#<n>:<headSha>` | A PR I opened (core gates it with `review.selfPr`) |
+| `github.pr.repo` | `github:<owner>/<repo>/pull/<n>` | `repo:<repo>#<n>:<headSha>` | A PR by someone else in my repository (`prScope=owned`; core gates it with `review.repoPr`) |
 | `github.issue.opened` | `github:<owner>/<repo>/issues/<n>` | `issue:<repo>#<n>` | A watched, owned or organization repository gets a new issue |
 | `github.mention` | `github:<owner>/<repo>/issues/<n>` | `mention:<repo>#<n>:<commentId\|body>` | Someone mentions me or my team |
 
@@ -98,6 +102,7 @@ id (patch `config` replaces the whole object, so repeat every key you want to ke
     intervalMs: 300000
     windowMs: 604800000
     issueScope: owned
+    prScope: owned
     repos:
       - xbzbing/dsh-my-superagent
     orgs:
@@ -111,7 +116,8 @@ id (patch `config` replaces the whole object, so repeat every key you want to ke
 | `windowMs` | `604800000` (7 days) | First-run and filter window for review/issue/mention; `0` disables filtering |
 | `repos` | `[]` | Watched repositories, `owner/repo`; the issue stream needs at least one when `issueScope=repos` |
 | `issueScope` | `repos` | `repos` only queries the watch list; `owned` also queries `user:@me` and `orgs`, keeping the watch list |
-| `orgs` | `[]` | Organization names; only used when `issueScope=owned`, one `org:<name>` query each |
+| `prScope` | `review` | `review` only queries review requests; `owned` also covers PRs by others via `user:@me`, `orgs` and the watch list |
+| `orgs` | `[]` | Organization names; used when `issueScope=owned` or `prScope=owned`, one `org:<name>` query each |
 | `maxRepos` | `10` | Repositories per poll (1–10) |
 | `maxOrgs` | `10` | Organizations per poll (1–10) |
 | `maxResults` | `100` | Items per stream per poll (1–100) |

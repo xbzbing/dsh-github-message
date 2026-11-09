@@ -18,12 +18,14 @@ test('运行时配置往返，过滤非法仓库与周期', (t) => {
     intervalMs: 600_000,
     repos: ['xbzbing/dsh-git-panel', 'xbzbing/dsh-my-superagent'],
     issueScope: 'owned',
+    prScope: 'owned',
     orgs: ['my-org'],
   });
   const loaded = loadRuntimeConfig(file);
   assert.equal(loaded.intervalMs, 600_000);
   assert.deepEqual(loaded.repos, ['xbzbing/dsh-git-panel', 'xbzbing/dsh-my-superagent']);
   assert.equal(loaded.issueScope, 'owned');
+  assert.equal(loaded.prScope, 'owned');
   assert.deepEqual(loaded.orgs, ['my-org']);
 });
 
@@ -41,6 +43,7 @@ test('损坏或非法的运行时配置降级为空', (t) => {
     intervalMs: -1,
     repos: ['bad', 'o/r', 42],
     issueScope: 'all',
+    prScope: 'all',
     orgs: ['bad_org', 'my-org', 42],
   }));
   assert.deepEqual(loadRuntimeConfig(invalid), { repos: ['o/r'], orgs: ['my-org'] });

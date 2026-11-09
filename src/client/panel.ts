@@ -13,12 +13,12 @@ import {
 import type { Translate } from './locale.ts';
 import type { RpcCall } from './rpc.ts';
 import { STYLES } from './styles.ts';
+import { configCard } from './config-card.ts';
 import {
   apiLabel,
   apiTone,
   card,
   chip,
-  formatInterval,
   formatNumber,
   formatTime,
   historyTable,
@@ -80,6 +80,7 @@ export function GithubMessagePanel(props: Props): unknown {
   const [intervalDraft, setIntervalDraft] = useState('5');
   const [reposDraft, setReposDraft] = useState('');
   const [scopeDraft, setScopeDraft] = useState<'repos' | 'owned'>('repos');
+  const [prScopeDraft, setPrScopeDraft] = useState<'review' | 'owned'>('review');
   const [orgsDraft, setOrgsDraft] = useState('');
   /** 折叠状态：默认只收起运行统计，其余展开。 */
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ stats: true });
@@ -87,6 +88,7 @@ export function GithubMessagePanel(props: Props): unknown {
   const dirtyInterval = useRef(false);
   const dirtyRepos = useRef(false);
   const dirtyScope = useRef(false);
+  const dirtyPrScope = useRef(false);
   const dirtyOrgs = useRef(false);
 
   const isOpen = (id: string): boolean => collapsed[id] !== true;
@@ -103,6 +105,7 @@ export function GithubMessagePanel(props: Props): unknown {
       if (!dirtyInterval.current) setIntervalDraft(minutesOf(next.config?.intervalMs));
       if (!dirtyRepos.current) setReposDraft((next.config?.repos ?? []).join('\n'));
       if (!dirtyScope.current) setScopeDraft(next.config?.issueScope === 'owned' ? 'owned' : 'repos');
+      if (!dirtyPrScope.current) setPrScopeDraft(next.config?.prScope === 'owned' ? 'owned' : 'review');
       if (!dirtyOrgs.current) setOrgsDraft((next.config?.orgs ?? []).join('\n'));
       setError('');
     } catch (failure) {
@@ -162,12 +165,13 @@ export function GithubMessagePanel(props: Props): unknown {
       return;
     }
 
+    const orgsInUse = scopeDraft === 'owned' || prScopeDraft === 'owned';
     const orgLines = orgsDraft.split('\n').map((line) => line.trim()).filter((line) => line !== '');
     const orgs: string[] = [];
     for (const line of orgLines) {
       if (!ORG_PATTERN.test(line)) {
         // 组织列表只在 owned 模式生效；关闭时忽略非法行，避免隐藏字段阻塞保存。
-        if (scopeDraft === 'owned') {
+        if (orgsInUse) {
           setNotice(t('组织名不合法：{org}', { org: line }));
           return;
         }
@@ -176,7 +180,7 @@ export function GithubMessagePanel(props: Props): unknown {
       if (!orgs.some((org) => org.toLowerCase() === line.toLowerCase())) orgs.push(line);
     }
     const maxOrgs = status?.config?.maxOrgs ?? 10;
-    if (scopeDraft === 'owned' && orgs.length > maxOrgs) {
+    if (orgsInUse && orgs.length > maxOrgs) {
       setNotice(t('最多 {max} 个组织', { max: maxOrgs }));
       return;
     }
@@ -201,6 +205,7 @@ export function GithubMessagePanel(props: Props): unknown {
         intervalMs: Math.round(minutes * 60_000),
         repos,
         issueScope: scopeDraft,
+        prScope: prScopeDraft,
         orgs,
       });
       if (!mounted.current) return;
@@ -208,10 +213,12 @@ export function GithubMessagePanel(props: Props): unknown {
       dirtyInterval.current = false;
       dirtyRepos.current = false;
       dirtyScope.current = false;
+      dirtyPrScope.current = false;
       dirtyOrgs.current = false;
       setIntervalDraft(minutesOf(next.config?.intervalMs));
       setReposDraft((next.config?.repos ?? []).join('\n'));
       setScopeDraft(next.config?.issueScope === 'owned' ? 'owned' : 'repos');
+      setPrScopeDraft(next.config?.prScope === 'owned' ? 'owned' : 'review');
       setOrgsDraft((next.config?.orgs ?? []).join('\n'));
       setNotice(t('已保存轮询配置'));
     } catch (failure) {
@@ -219,7 +226,7 @@ export function GithubMessagePanel(props: Props): unknown {
     } finally {
       if (mounted.current) setBusy('');
     }
-  }, [intervalDraft, reposDraft, scopeDraft, orgsDraft, rpcCall, status?.config?.maxRepos, status?.config?.maxOrgs, t]);
+  }, [intervalDraft, reposDraft, scopeDraft, prScopeDraft, orgsDraft, rpcCall, status?.config?.maxRepos, status?.config?.maxOrgs, t]);
 
   if (loading && status === null) {
     return h('div', { className: 'icm-panel' }, h('p', { className: 'icm-muted' }, t('正在读取…')));
@@ -326,97 +333,42 @@ export function GithubMessagePanel(props: Props): unknown {
         ],
       }),
 
-      card({
-        id: 'poll',
-        title: t('轮询配置'),
-        className: 'icm-card--wide',
+      configCard({
+        t,
         open: isOpen('poll'),
         onToggle: () => toggle('poll'),
-        children: [
-          h('div', { className: 'icm-config-stack' },
-            h('div', { className: 'icm-field-block' },
-              h('h4', null, t('维护仓库')),
-              h('p', { className: 'icm-note' },
-                t('每行一个 owner/repo，最多 {max} 个。新 Issue 默认只提醒这些仓库。', {
-                  max: config?.maxRepos ?? 10,
-                })),
-              h('label', { className: 'icm-check' },
-                h('input', {
-                  type: 'checkbox',
-                  checked: scopeDraft === 'owned',
-                  onChange: (event: { target: { checked: boolean } }) => {
-                    dirtyScope.current = true;
-                    setScopeDraft(event.target.checked ? 'owned' : 'repos');
-                  },
-                }),
-                h('span', null, t('自动覆盖我名下的所有仓库'))),
-              h('p', { className: 'icm-hint' },
-                t('开启后还会查询当前账号名下的仓库，以及下面列出的组织；上面的仓库列表始终保留。')),
-              h('label', { className: 'icm-field' },
-                h('span', null, t('仓库列表')),
-                h('textarea', {
-                  className: 'icm-textarea',
-                  rows: 4,
-                  spellCheck: false,
-                  value: reposDraft,
-                  placeholder: 'owner/repo',
-                  onChange: (event: { target: { value: string } }) => {
-                    dirtyRepos.current = true;
-                    setReposDraft(event.target.value);
-                  },
-                })),
-              scopeDraft === 'owned'
-                ? h('div', null,
-                    h('label', { className: 'icm-field' },
-                      h('span', null, t('组织列表')),
-                      h('textarea', {
-                        className: 'icm-textarea',
-                        rows: 3,
-                        spellCheck: false,
-                        value: orgsDraft,
-                        placeholder: 'my-org',
-                        onChange: (event: { target: { value: string } }) => {
-                          dirtyOrgs.current = true;
-                          setOrgsDraft(event.target.value);
-                        },
-                      })),
-                    h('p', { className: 'icm-hint' },
-                      t('每行一个组织名，最多 {max} 个；核心回源时只提醒你有写权限的仓库。', { max: config?.maxOrgs ?? 10 })))
-                : null),
-            h('div', { className: 'icm-field-block' },
-              h('h4', null, t('检查周期')),
-              h('p', { className: 'icm-note' },
-                t('当前周期：{interval}', { interval: formatInterval(config?.intervalMs, t) }),
-                ' · ',
-                t('下一轮：{time}', { time: formatTime(status?.poll?.nextPollAt) }),
-                backoff > 0 ? ` · ${t('失败退避')} ${formatInterval(backoff, t)}` : ''),
-              h('label', { className: 'icm-field' },
-                h('span', null, t('检查周期（分钟）')),
-                h('input', {
-                  className: 'icm-input',
-                  type: 'number',
-                  min: MIN_CLIENT_INTERVAL_MINUTES,
-                  max: MAX_CLIENT_INTERVAL_MINUTES,
-                  step: 1,
-                  value: intervalDraft,
-                  onChange: (event: { target: { value: string } }) => {
-                    dirtyInterval.current = true;
-                    setIntervalDraft(event.target.value);
-                  },
-                })),
-              h('p', { className: 'icm-hint' },
-                t('可设置 {min} 到 {max} 分钟，默认 5 分钟；实际间隔不会短于 GitHub 的 X-Poll-Interval。', {
-                  min: MIN_CLIENT_INTERVAL_MINUTES,
-                  max: MAX_CLIENT_INTERVAL_MINUTES,
-                })))),
-          h('div', { className: 'icm-actions' },
-            h('button', {
-              type: 'button',
-              className: 'icm-btn icm-btn--primary',
-              disabled: busy !== '',
-              onClick: () => void saveConfig(),
-            }, busy === 'config.set' ? t('保存中…') : t('保存配置'))),
-        ],
+        busy: busy === 'config.set',
+        interval: intervalDraft,
+        repos: reposDraft,
+        issueScope: scopeDraft,
+        prScope: prScopeDraft,
+        orgs: orgsDraft,
+        maxRepos: config?.maxRepos,
+        maxOrgs: config?.maxOrgs,
+        intervalMs: config?.intervalMs,
+        nextPollAt: status?.poll?.nextPollAt,
+        backoffMs: backoff,
+        onInterval: (value) => {
+          dirtyInterval.current = true;
+          setIntervalDraft(value);
+        },
+        onRepos: (value) => {
+          dirtyRepos.current = true;
+          setReposDraft(value);
+        },
+        onIssueScope: (value) => {
+          dirtyScope.current = true;
+          setScopeDraft(value);
+        },
+        onPrScope: (value) => {
+          dirtyPrScope.current = true;
+          setPrScopeDraft(value);
+        },
+        onOrgs: (value) => {
+          dirtyOrgs.current = true;
+          setOrgsDraft(value);
+        },
+        onSave: () => void saveConfig(),
       }),
 
       card({

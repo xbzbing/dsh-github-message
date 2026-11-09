@@ -1,13 +1,14 @@
 // 轮询编排：三路各自独立拉取、过滤、翻译、上报；一个流失败不影响另外两个。
 // 去重分两层：本轮内 Set；跨轮询用 SeenLike（默认持久化到 seen.json）。
 
-import type { IssueScope, MentionMode } from './config.ts';
+import type { IssueScope, MentionMode, PrScope } from './config.ts';
 import type { GhTransport } from './gh.ts';
 import {
   fetchMentionCandidates,
   fetchMentionSearch,
   type MentionResult,
 } from './notifications.ts';
+import { ownedPullSources } from './pull-scope.ts';
 import {
   fetchIssueCandidates,
   fetchReviewCandidates,
@@ -20,6 +21,7 @@ import {
 import {
   issueDraft,
   mentionDraft,
+  repoPullDraft,
   reviewDraft,
   selfPullDraft,
   type SignalDraft,
@@ -50,6 +52,7 @@ export interface PollConfig {
   windowMs: number;
   repos: string[];
   issueScope: IssueScope;
+  prScope: PrScope;
   orgs: string[];
   maxRepos: number;
   maxOrgs: number;
@@ -98,6 +101,8 @@ export interface PollSummary {
   mention: StreamSummary;
   // 自己提的 PR（ADR-0087）：单独一条流，统计与排障时能看清是这一类。
   selfPr: StreamSummary;
+  // 自有仓库里别人开的 PR（ADR-0007）：与自提 PR 分开统计，方便判断 owned 覆盖是否生效。
+  repoPr: StreamSummary;
   fetched: number;
   emitted: number;
   duplicates: number;
@@ -206,8 +211,17 @@ function applyStreamMeta(stream: StreamSummary, source: StreamResult<unknown>): 
   for (const error of source.errors) addError(stream, error);
 }
 
+/** 多来源合并：一条 owned PR 流会发多条搜索，计数相加而不是覆盖。 */
+function mergeStreamMeta(stream: StreamSummary, source: StreamResult<unknown>): void {
+  stream.fetched += source.fetched;
+  stream.filtered += source.filtered;
+  stream.skipped += source.skipped;
+  if (!source.authenticated) stream.authenticated = false;
+  for (const error of source.errors) addError(stream, error);
+}
+
 function aggregate(summary: PollSummary): void {
-  const streams = [summary.review, summary.issue, summary.mention, summary.selfPr];
+  const streams = [summary.review, summary.issue, summary.mention, summary.selfPr, summary.repoPr];
   summary.fetched = streams.reduce((total, stream) => total + stream.fetched, 0);
   summary.emitted = streams.reduce((total, stream) => total + stream.emitted, 0);
   summary.duplicates = streams.reduce((total, stream) => total + stream.duplicates, 0);
@@ -266,6 +280,61 @@ async function runSelfPulls(deps: PollDeps, now: number, summary: PollSummary, s
   applyStreamMeta(summary.selfPr, result);
   if (result.rateLimitResetAt !== undefined) summary.rateLimitResetAt = result.rateLimitResetAt;
   await processCandidates(summary.selfPr, result.candidates as ReviewCandidate[], selfPullDraft, deps, seen, now, flags);
+}
+
+// 自有仓库里别人开的 PR（ADR-0007）：prScope=owned 时按 user:@me、orgs 与显式仓库分别查询。
+// 作者是主人自己的 PR 已由 self 流负责，这里过滤掉；同一个 PR 命中多个来源时按 repo#number 去重。
+async function runRepoPulls(deps: PollDeps, now: number, summary: PollSummary, seen: Set<string>, flags: { sourceDisabled: boolean }): Promise<void> {
+  if (deps.config.prScope !== 'owned') return;
+  if (deps.isActive !== undefined && !deps.isActive()) return;
+  const login = deps.config.login;
+  if (login === undefined || login === '') return;
+  const repos = deps.config.repos.slice(0, deps.config.maxRepos);
+  const orgs = deps.config.orgs.slice(0, deps.config.maxOrgs);
+  const { queries, skipped } = ownedPullSources({ repos, orgs });
+  summary.repoPr.skipped += skipped;
+  const sinceMs = deps.config.windowMs > 0 ? now - deps.config.windowMs : 0;
+  const lowerLogin = login.toLowerCase();
+  const collected: ReviewCandidate[] = [];
+  const keys = new Set<string>();
+
+  for (const query of queries) {
+    if (deps.isActive !== undefined && !deps.isActive()) return;
+    let result: StreamResult<ReviewCandidate>;
+    try {
+      result = await fetchReviewCandidates(deps.client, {
+        query,
+        sinceMs,
+        maxResults: deps.config.maxResults,
+        maxPages: deps.config.maxPages,
+        includeDrafts: deps.config.includeDrafts,
+        timeoutMs: deps.config.timeoutMs,
+      }, deps.cache);
+    } catch (error) {
+      addError(summary.repoPr, `repo 流失败：${errorText(error)}`);
+      continue;
+    }
+    mergeStreamMeta(summary.repoPr, result);
+    if (result.rateLimitResetAt !== undefined) summary.rateLimitResetAt = result.rateLimitResetAt;
+    for (const candidate of result.candidates) {
+      const key = `${candidate.repo.toLowerCase()}#${candidate.number}`;
+      if (keys.has(key)) {
+        summary.repoPr.filtered += 1;
+        continue;
+      }
+      keys.add(key);
+      if (candidate.author !== undefined && candidate.author.toLowerCase() === lowerLogin) {
+        summary.repoPr.filtered += 1;
+        continue;
+      }
+      collected.push(candidate);
+    }
+  }
+
+  collected.sort((left, right) => right.updatedAt - left.updatedAt);
+  const capped = collected.slice(0, deps.config.maxResults);
+  summary.repoPr.filtered += collected.length - capped.length;
+  await processCandidates(summary.repoPr, capped, repoPullDraft, deps, seen, now, flags);
 }
 
 async function runIssues(deps: PollDeps, now: number, summary: PollSummary, seen: Set<string>, flags: { sourceDisabled: boolean }): Promise<void> {
@@ -335,6 +404,7 @@ export async function pollOnce(deps: PollDeps): Promise<PollSummary> {
     issue: emptyStream(),
     mention: emptyStream(),
     selfPr: emptyStream(),
+    repoPr: emptyStream(),
     fetched: 0,
     emitted: 0,
     duplicates: 0,
@@ -353,6 +423,7 @@ export async function pollOnce(deps: PollDeps): Promise<PollSummary> {
 
   await runReview(deps, now, summary, seenThisPoll, flags);
   await runSelfPulls(deps, now, summary, seenThisPoll, flags);
+  await runRepoPulls(deps, now, summary, seenThisPoll, flags);
   await runIssues(deps, now, summary, seenThisPoll, flags);
   await runMention(deps, now, summary, seenThisPoll, flags);
 
@@ -367,6 +438,7 @@ export function describeSummary(summary: PollSummary): string {
     `issue ${summary.issue.fetched}/${summary.issue.emitted}`,
     `mention ${summary.mention.fetched}/${summary.mention.emitted}`,
     `self ${summary.selfPr.fetched}/${summary.selfPr.emitted}`,
+    `repo ${summary.repoPr.fetched}/${summary.repoPr.emitted}`,
     `去重 ${summary.duplicates}`,
   ];
   if (summary.deferred > 0) parts.push(`待上报 ${summary.deferred}`);
@@ -379,6 +451,7 @@ export function pollConfigOf(config: {
   windowMs: number;
   repos: string[];
   issueScope: IssueScope;
+  prScope: PrScope;
   orgs: string[];
   maxRepos: number;
   maxOrgs: number;
@@ -397,6 +470,7 @@ export function pollConfigOf(config: {
     windowMs: config.windowMs,
     repos: [...config.repos],
     issueScope: config.issueScope,
+    prScope: config.prScope,
     orgs: [...config.orgs],
     maxRepos: config.maxRepos,
     maxOrgs: config.maxOrgs,

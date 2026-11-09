@@ -5,7 +5,8 @@
 `dsh-github-message` 是 [dsh-my-superagent](../dsh-my-superagent) 的一个**消息来源插件**：
 用本机 `gh` 只读轮询 GitHub，把三类事实翻译成 `my-superagent/v1` 信号。
 
-1. **review**：待我评审的 PR（`review-requested:@me`）。
+1. **review**：待我评审的 PR（`review-requested:@me`），以及自己提的 PR（`author:@me`，ADR-0087）。
+   `prScope: owned` 还会覆盖我名下仓库/组织/维护列表里别人开的 PR（ADR-0007）。
 2. **issue**：我维护的仓库、我名下的仓库或我指定的组织里新开的 Issue，提醒主人「是否分析」。
    默认 `issueScope: repos` 只查维护列表；`owned` 额外用 `user:@me` 与 `orgs` 覆盖自有仓库和组织。
 3. **mention**：有人 @ 我或我所在的团队。
@@ -39,6 +40,8 @@
 ```text
 GitHub API (gh api, read-only)
   ├─ search/issues: review-requested:@me
+  ├─ search/issues: author:@me is:pr（自己提的 PR）
+  ├─ search/issues: user:@me / org:<org> / repo:<repo> is:pr（prScope=owned）
   ├─ search/issues: repo:<owner>/<repo> is:issue created:>=（issueScope=repos）
   ├─ search/issues: user:@me / org:<org> is:issue created:>=（issueScope=owned）
   └─ notifications: reason=mention|team_mention（降级 search mentions:@me）
@@ -58,6 +61,8 @@ src/poller.ts  三路独立编排、过滤、去重、统计
 | kind | subject | sourceEventId |
 | --- | --- | --- |
 | `code-review.requested` | `github:<owner>/<repo>/pull/<n>` | `review:<repo>#<n>:<headSha>` |
+| `github.pr.opened` | `github:<owner>/<repo>/pull/<n>` | `self:<repo>#<n>:<headSha>` |
+| `github.pr.repo` | `github:<owner>/<repo>/pull/<n>` | `repo:<repo>#<n>:<headSha>` |
 | `github.issue.opened` | `github:<owner>/<repo>/issues/<n>` | `issue:<repo>#<n>` |
 | `github.mention` | `github:<owner>/<repo>/issues/<n>` | `mention:<repo>#<n>:<commentId|body>` |
 
@@ -121,4 +126,7 @@ gh api 'notifications?all=true&per_page=1' --include
 
 - 核心 P1 已支持 `github:` subject 与 `github-source` feature；旧核心仍会走 dry-run。
   Issue 分析、评审任务与写回属于核心后续阶段，不是插件故障。
+- 仓库自有 PR 需要核心的 `review.repoPr`（默认关）：见
+  [docs/proposal/02-核心提案-仓库自有PR评审.md](docs/proposal/02-核心提案-仓库自有PR评审.md)。
+  核心未实现时，`prScope: owned` 上报的 `github.pr.repo` 会被旧核心判 `unverified-external` 并忽略，不是插件故障。
 - 面板的「核心信号」统计只读 `$DSH_HOME/dsh-my-superagent/state.sqlite`，读不到就降级。

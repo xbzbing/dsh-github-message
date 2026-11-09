@@ -6,6 +6,7 @@ import {
   DEFAULT_ISSUE_SCOPE,
   DEFAULT_MAX_ORGS,
   DEFAULT_MAX_REPOS,
+  DEFAULT_PR_SCOPE,
   DEFAULT_WINDOW_MS,
   MAX_INTERVAL_MS,
   MIN_INTERVAL_MS,
@@ -107,6 +108,14 @@ test('issueScope 与组织名校验、去重与上限', () => {
   const capped = resolveConfig({ orgs: many, maxOrgs: 50 }, ENV);
   assert.equal(capped.maxOrgs, 10);
   assert.equal(capped.orgs.length, 10);
+});
+
+test('prScope 默认 review，非法值降级', () => {
+  assert.equal(resolveConfig({}, ENV).prScope, DEFAULT_PR_SCOPE);
+  assert.equal(resolveConfig({ prScope: 'owned' }, ENV).prScope, 'owned');
+  const warnings: string[] = [];
+  assert.equal(resolveConfig({ prScope: 'all' }, ENV, warnings).prScope, 'review');
+  assert.ok(warnings.some((warning) => warning.includes('prScope')));
 });
 
 test('mentionMode 非法值降级，off/search 保留', () => {

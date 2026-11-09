@@ -126,6 +126,7 @@ function summary(overrides: Partial<PollSummary> = {}): PollSummary {
     issue: stream(),
     mention: stream(),
     selfPr: stream(),
+    repoPr: stream(),
     fetched: 0,
     emitted: 0,
     duplicates: 0,

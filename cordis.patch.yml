@@ -7,5 +7,6 @@
       config:
         intervalMs: 300000
         issueScope: repos
+        prScope: review
         repos: []
         orgs: []

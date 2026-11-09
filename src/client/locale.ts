@@ -66,15 +66,18 @@ export const EN: Record<string, string> = {
     'When the source is off on the Superagent Sources page, signals are not stored; the next poll catches up after you enable it.',
 
   '维护仓库': 'Maintained repositories',
-  '每行一个 owner/repo，最多 {max} 个。新 Issue 默认只提醒这些仓库。':
-    'One owner/repo per line, up to {max}. New issues are reported for these repositories by default.',
+  '每行一个 owner/repo，最多 {max} 个。Issue 与 PR 的默认范围都从这里开始。':
+    'One owner/repo per line, up to {max}. Issues and PRs both start from this list.',
   '自动覆盖我名下的所有仓库': 'Automatically cover all repositories I own',
   '开启后还会查询当前账号名下的仓库，以及下面列出的组织；上面的仓库列表始终保留。':
     'When enabled, also queries repositories owned by the current account plus the organizations listed below; the repository list above is always kept.',
+  '自动覆盖我名下仓库的新 PR': 'Automatically cover new PRs in repositories I own',
+  '开启后会查询当前账号、组织与上面列出的仓库里别人开的 PR；需要核心同时打开「仓库自有 PR 评审」（review.repoPr），否则核心会忽略。':
+    'When enabled, also queries open PRs by others in the current account, the listed organizations and repositories. The core must also enable "Repo PR review" (review.repoPr), otherwise it ignores them.',
   '仓库列表': 'Repositories',
   '组织列表': 'Organizations',
-  '每行一个组织名，最多 {max} 个；核心回源时只提醒你有写权限的仓库。':
-    'One organization per line, up to {max}; the core only notifies for repositories you can write to.',
+  '每行一个组织名，最多 {max} 个；Issue 与 PR 的 owned 范围共用这份列表，核心回源时只提醒你有写权限的仓库。':
+    'One organization per line, up to {max}; the owned scopes for issues and PRs share this list. The core only notifies for repositories you can write to.',
   '保存配置': 'Save settings',
   '已保存轮询配置': 'Polling settings saved',
   '失败退避': 'Backoff',
@@ -107,6 +110,7 @@ export const EN: Record<string, string> = {
   '新 Issue': 'New issues',
   '@ 提醒': '@ mentions',
   '自提 PR': 'My own PRs',
+  '仓库 PR': 'Repo PRs',
   '拉取': 'Fetched',
   '上报': 'Reported',
   '去重': 'Deduplicated',

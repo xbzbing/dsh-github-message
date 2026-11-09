@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "GitHub Messages",
-    "description": "Poll GitHub read-only for review requests, new issues in maintained repositories, and @-mentions, emit my-superagent/v1 signals, and show login, repositories, interval, and per-stream statistics in DSH."
+    "description": "Poll GitHub read-only for review requests, new PRs and issues in repositories I own, and @-mentions, emit my-superagent/v1 signals, and show login, repositories, issue/PR scope, interval, and per-stream statistics in DSH."
   }
 }

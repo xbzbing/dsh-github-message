@@ -5,10 +5,12 @@ import {
   ISSUE_SCOPES,
   MAX_INTERVAL_MS,
   MIN_INTERVAL_MS,
+  PR_SCOPES,
   normalizeOrg,
   normalizeRepo,
   type IssueScope,
   type MentionMode,
+  type PrScope,
   type ResolvedConfig,
 } from './config.ts';
 import {
@@ -97,6 +99,7 @@ export interface StatusSnapshot {
     windowMs: number;
     repos: string[];
     issueScope: IssueScope;
+    prScope: PrScope;
     orgs: string[];
     maxRepos: number;
     maxOrgs: number;
@@ -123,9 +126,9 @@ export interface StatusSnapshot {
 }
 
 export class RuntimeConfigError extends Error {
-  readonly code: 'invalid-interval' | 'invalid-repos' | 'invalid-orgs' | 'invalid-issue-scope';
+  readonly code: 'invalid-interval' | 'invalid-repos' | 'invalid-orgs' | 'invalid-issue-scope' | 'invalid-pr-scope';
 
-  constructor(code: 'invalid-interval' | 'invalid-repos' | 'invalid-orgs' | 'invalid-issue-scope', message: string) {
+  constructor(code: 'invalid-interval' | 'invalid-repos' | 'invalid-orgs' | 'invalid-issue-scope' | 'invalid-pr-scope', message: string) {
     super(message);
     this.name = 'RuntimeConfigError';
     this.code = code;
@@ -151,6 +154,7 @@ function failureSummary(at: number, message: string): PollSummary {
     issue: stream(),
     mention: stream(),
     selfPr: stream(),
+    repoPr: stream(),
     fetched: 0,
     emitted: 0,
     duplicates: 0,
@@ -378,7 +382,7 @@ export class GithubMessageRuntime {
     }
   }
 
-  /** 面板保存周期、仓库、Issue 范围与组织；持久化，周期变化时重排定时器。 */
+  /** 面板保存周期、仓库、Issue/PR 范围与组织；持久化，周期变化时重排定时器。 */
   setConfig(payload: unknown): StatusSnapshot {
     const input = payload !== null && typeof payload === 'object' && !Array.isArray(payload)
       ? payload as Record<string, unknown>
@@ -420,6 +424,15 @@ export class GithubMessageRuntime {
       issueScope = scope;
     }
 
+    let prScope = this.config.prScope;
+    if (input.prScope !== undefined) {
+      const scope = typeof input.prScope === 'string'
+        ? PR_SCOPES.find((candidate) => candidate === input.prScope)
+        : undefined;
+      if (scope === undefined) throw new RuntimeConfigError('invalid-pr-scope', 'PR 范围必须是 review 或 owned');
+      prScope = scope;
+    }
+
     let orgs = this.config.orgs;
     if (input.orgs !== undefined) {
       if (!Array.isArray(input.orgs)) throw new RuntimeConfigError('invalid-orgs', '组织列表必须是数组');
@@ -439,12 +452,13 @@ export class GithubMessageRuntime {
     }
 
     const changedInterval = intervalMs !== this.config.intervalMs;
-    this.config = { ...this.config, intervalMs, repos: [...repos], issueScope, orgs: [...orgs] };
+    this.config = { ...this.config, intervalMs, repos: [...repos], issueScope, prScope, orgs: [...orgs] };
     // 只持久化用户这次真正改过的字段，避免保存周期时把 patch 里的仓库列表一起钉死。
-    const update: { intervalMs?: number; repos?: string[]; issueScope?: IssueScope; orgs?: string[] } = {};
+    const update: { intervalMs?: number; repos?: string[]; issueScope?: IssueScope; prScope?: PrScope; orgs?: string[] } = {};
     if (input.intervalMs !== undefined) update.intervalMs = intervalMs;
     if (input.repos !== undefined) update.repos = [...repos];
     if (input.issueScope !== undefined) update.issueScope = issueScope;
+    if (input.prScope !== undefined) update.prScope = prScope;
     if (input.orgs !== undefined) update.orgs = [...orgs];
     if (Object.keys(update).length > 0) {
       const existing = loadRuntimeConfig(this.config.runtimeConfigFile, this.logger);
@@ -564,6 +578,7 @@ export class GithubMessageRuntime {
         windowMs: this.config.windowMs,
         repos: [...this.config.repos],
         issueScope: this.config.issueScope,
+        prScope: this.config.prScope,
         orgs: [...this.config.orgs],
         maxRepos: this.config.maxRepos,
         maxOrgs: this.config.maxOrgs,

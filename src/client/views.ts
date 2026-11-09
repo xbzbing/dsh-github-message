@@ -29,6 +29,8 @@ export interface Summary {
   review?: StreamSummary;
   issue?: StreamSummary;
   mention?: StreamSummary;
+  selfPr?: StreamSummary;
+  repoPr?: StreamSummary;
   fetched?: number;
   emitted?: number;
   duplicates?: number;
@@ -106,6 +108,7 @@ export interface Status {
     windowMs?: number;
     repos?: string[];
     issueScope?: string;
+    prScope?: string;
     orgs?: string[];
     maxRepos?: number;
     maxOrgs?: number;
@@ -214,6 +217,7 @@ export function kindLabel(t: Translate, kind: string): string {
   if (kind === 'issue') return t('新 Issue');
   if (kind === 'mention') return t('@ 提醒');
   if (kind === 'selfPr') return t('自提 PR');
+  if (kind === 'repoPr') return t('仓库 PR');
   return kind;
 }
 
@@ -265,7 +269,7 @@ export function streamStats(stats: Stats | undefined, name: string): KindStats {
 
 export function kindTable(t: Translate, stats: Stats | undefined): unknown {
   const rows: unknown[] = [];
-  for (const name of ['review', 'issue', 'mention', 'selfPr']) {
+  for (const name of ['review', 'issue', 'mention', 'selfPr', 'repoPr']) {
     const item = streamStats(stats, name);
     rows.push(h('tr', { key: name },
       h('td', null, kindLabel(t, name)),

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { GhError } from '../src/gh.ts';
+import { orgPullQuery, ownedPullSources, OWNED_PULL_QUERY, repoPullQuery } from '../src/pull-scope.ts';
 import {
   fetchIssueCandidates,
   fetchReviewCandidates,
@@ -230,6 +231,28 @@ test('owned 模式查 user:@me 与组织，并按 repo#number 跨来源去重', 
     orgIssueQuery('my-org', 0),
     issueQuery('alice/one', 0),
   ]);
+});
+
+test('ownedPullSources 先查 user:@me，再组织与显式仓库，非法项计 skipped', () => {
+  const { queries, skipped } = ownedPullSources({
+    repos: ['alice/one', 'bad'],
+    orgs: ['my-org', 'bad_org'],
+  });
+  assert.deepEqual(queries, [
+    OWNED_PULL_QUERY,
+    orgPullQuery('my-org'),
+    repoPullQuery('alice/one'),
+  ]);
+  assert.equal(skipped, 2);
+});
+
+test('ownedPullSources 大小写不敏感去重，仓库为空也保留 user:@me', () => {
+  const { queries } = ownedPullSources({
+    repos: ['alice/one'],
+    orgs: [],
+  });
+  assert.deepEqual(queries, [OWNED_PULL_QUERY, repoPullQuery('alice/one')]);
+  assert.deepEqual(ownedPullSources({ repos: [], orgs: [] }).queries, [OWNED_PULL_QUERY]);
 });
 
 test('repos 模式忽略 orgs，只查仓库列表', async () => {

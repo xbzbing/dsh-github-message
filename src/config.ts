@@ -11,6 +11,11 @@ export const ISSUE_SCOPES = ['repos', 'owned'] as const;
 export type IssueScope = (typeof ISSUE_SCOPES)[number];
 export const DEFAULT_ISSUE_SCOPE: IssueScope = 'repos';
 
+/** PR 流的取数范围：只查待我评审，或额外覆盖自有仓库/组织/显式仓库里别人开的 PR。 */
+export const PR_SCOPES = ['review', 'owned'] as const;
+export type PrScope = (typeof PR_SCOPES)[number];
+export const DEFAULT_PR_SCOPE: PrScope = 'review';
+
 export const DEFAULT_INTERVAL_MS = 5 * 60_000; // 5 分钟
 export const DEFAULT_WINDOW_MS = 7 * 24 * 60 * 60_000; // 7 天
 export const MIN_INTERVAL_MS = 60_000;
@@ -41,7 +46,9 @@ export interface ResolvedConfig {
   repos: string[];
   /** issue 流范围：`repos` 只查仓库列表；`owned` 额外查当前账号与 orgs。 */
   issueScope: IssueScope;
-  /** 组织列表；仅 `issueScope=owned` 时生效。 */
+  /** PR 流范围：`review` 只查待我评审；`owned` 额外查当前账号、orgs 与仓库列表。 */
+  prScope: PrScope;
+  /** 组织列表；`issueScope=owned` 或 `prScope=owned` 时生效。 */
   orgs: string[];
   /** 单轮最多查多少个仓库。 */
   maxRepos: number;
@@ -174,6 +181,16 @@ function parseIssueScope(value: unknown, warnings: string[]): IssueScope {
   return DEFAULT_ISSUE_SCOPE;
 }
 
+function parsePrScope(value: unknown, warnings: string[]): PrScope {
+  if (value === undefined || value === null) return DEFAULT_PR_SCOPE;
+  if (typeof value === 'string') {
+    const candidate = PR_SCOPES.find((scope) => scope === value);
+    if (candidate !== undefined) return candidate;
+  }
+  warnings.push(`prScope=${JSON.stringify(value)} 不合法，已改用 review`);
+  return DEFAULT_PR_SCOPE;
+}
+
 export function dataDirectory(raw: Record<string, unknown>, env: ResolveEnv): string {
   const configured = text(raw.dataDir);
   if (configured !== undefined) return configured;
@@ -215,6 +232,7 @@ export function resolveConfig(raw: unknown, env: ResolveEnv, warnings: string[] 
   }
 
   const issueScope = parseIssueScope(input.issueScope, warnings);
+  const prScope = parsePrScope(input.prScope, warnings);
   const maxOrgs = Math.trunc(clamp(finite(input.maxOrgs) ?? DEFAULT_MAX_ORGS, 1, MAX_ORGS_LIMIT));
   let orgs = parseOrgs(input.orgs, warnings);
   if (orgs.length > maxOrgs) {
@@ -261,6 +279,7 @@ export function resolveConfig(raw: unknown, env: ResolveEnv, warnings: string[] 
     windowMs,
     repos,
     issueScope,
+    prScope,
     orgs,
     maxRepos,
     maxOrgs,
