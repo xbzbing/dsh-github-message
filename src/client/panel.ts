@@ -51,11 +51,16 @@ interface Props {
 }
 
 function ensureStyles(): void {
-  if (typeof document === 'undefined' || document.getElementById('dgm-styles') !== null) return;
-  const style = document.createElement('style');
-  style.id = 'dgm-styles';
-  style.textContent = STYLES;
-  document.head.appendChild(style);
+  if (typeof document === 'undefined') return;
+  // 同一个 style 元素复用并刷新内容：插件热重载时组件实例可能还在，
+  // 只按 id 判断「已注入」会让新样式永远进不来。
+  let style = document.getElementById('dgm-styles') as HTMLStyleElement | null;
+  if (style === null) {
+    style = document.createElement('style');
+    style.id = 'dgm-styles';
+    document.head.appendChild(style);
+  }
+  if (style.textContent !== STYLES) style.textContent = STYLES;
 }
 
 function errorText(error: unknown): string {

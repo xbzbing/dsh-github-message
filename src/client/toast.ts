@@ -54,11 +54,15 @@ a.dgm-toast-title:hover{text-decoration:underline}
 `;
 
 function ensureStyles(): void {
-  if (typeof document === 'undefined' || document.getElementById(STYLE_ID) !== null) return;
-  const style = document.createElement('style');
-  style.id = STYLE_ID;
-  style.textContent = STYLES;
-  document.head.appendChild(style);
+  if (typeof document === 'undefined') return;
+  // 与面板同理：复用已有的 style 元素并刷新内容，避免热重载后停留在旧样式。
+  let style = document.getElementById(STYLE_ID) as HTMLStyleElement | null;
+  if (style === null) {
+    style = document.createElement('style');
+    style.id = STYLE_ID;
+    document.head.appendChild(style);
+  }
+  if (style.textContent !== STYLES) style.textContent = STYLES;
 }
 
 function clockOf(at: number): string {
