@@ -1,6 +1,6 @@
 {
   "name": "dsh-github-message",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DeepSeek Harness (dsh) plugin: read-only GitHub polling that turns review requests, new issues and @mentions into my-superagent/v1 signals.",
   "type": "module",
   "license": "MIT",
