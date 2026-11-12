@@ -11,6 +11,7 @@ import {
   REFRESH_INTERVAL_MS,
 } from '../constants.ts';
 import type { Translate } from './locale.ts';
+import { createNotice, dismissInMs, type Notice, type NoticeTone } from './notice.ts';
 import type { RpcCall } from './rpc.ts';
 import { STYLES } from './styles.ts';
 import { configCard } from './config-card.ts';
@@ -81,7 +82,7 @@ export function GithubMessagePanel(props: Props): unknown {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
-  const [notice, setNotice] = useState('');
+  const [notice, setNotice] = useState<Notice | null>(null);
   const [intervalDraft, setIntervalDraft] = useState('5');
   const [reposDraft, setReposDraft] = useState('');
   const [scopeDraft, setScopeDraft] = useState<'repos' | 'owned'>('repos');
@@ -95,6 +96,13 @@ export function GithubMessagePanel(props: Props): unknown {
   const dirtyScope = useRef(false);
   const dirtyPrScope = useRef(false);
   const dirtyOrgs = useRef(false);
+  const noticeSeq = useRef(0);
+
+  /** 每次提示都换一个新 id：同样文案再次出现时也能重新计时。 */
+  const showNotice = useCallback((text: string, tone: NoticeTone = 'info'): void => {
+    noticeSeq.current += 1;
+    setNotice(createNotice(noticeSeq.current, text, tone, Date.now()));
+  }, []);
 
   const isOpen = (id: string): boolean => collapsed[id] !== true;
   const toggle = (id: string): void => {
@@ -132,20 +140,32 @@ export function GithubMessagePanel(props: Props): unknown {
     };
   }, [load]);
 
+  // 成功提示到点自动收起；失败提示的 expiresAt 为空，只能点关闭或等下一次操作。
+  useEffect(() => {
+    if (notice === null) return undefined;
+    const remaining = dismissInMs(notice, Date.now());
+    if (remaining === undefined) return undefined;
+    const id = notice.id;
+    const timer = setTimeout(() => {
+      setNotice((current) => (current !== null && current.id === id ? null : current));
+    }, remaining);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
   const run = useCallback(async (method: string, done: string): Promise<void> => {
     setBusy(method);
-    setNotice('');
+    setNotice(null);
     try {
       const next = await rpcCall<Status>(method);
       if (!mounted.current) return;
       setStatus(next);
-      setNotice(done);
+      showNotice(done);
     } catch (failure) {
-      if (mounted.current) setNotice(t('操作失败：{error}', { error: errorText(failure) }));
+      if (mounted.current) showNotice(t('操作失败：{error}', { error: errorText(failure) }), 'error');
     } finally {
       if (mounted.current) setBusy('');
     }
-  }, [rpcCall, t]);
+  }, [rpcCall, showNotice, t]);
 
   const refresh = useCallback(async (): Promise<void> => {
     setBusy('refresh');
@@ -159,14 +179,14 @@ export function GithubMessagePanel(props: Props): unknown {
     const repos: string[] = [];
     for (const line of lines) {
       if (!REPO_PATTERN.test(line)) {
-        setNotice(t('仓库名不合法：{repo}', { repo: line }));
+        showNotice(t('仓库名不合法：{repo}', { repo: line }), 'error');
         return;
       }
       if (!repos.some((repo) => repo.toLowerCase() === line.toLowerCase())) repos.push(line);
     }
     const max = status?.config?.maxRepos ?? 10;
     if (repos.length > max) {
-      setNotice(t('最多 {max} 个仓库', { max }));
+      showNotice(t('最多 {max} 个仓库', { max }), 'error');
       return;
     }
 
@@ -177,7 +197,7 @@ export function GithubMessagePanel(props: Props): unknown {
       if (!ORG_PATTERN.test(line)) {
         // 组织列表只在 owned 模式生效；关闭时忽略非法行，避免隐藏字段阻塞保存。
         if (orgsInUse) {
-          setNotice(t('组织名不合法：{org}', { org: line }));
+          showNotice(t('组织名不合法：{org}', { org: line }), 'error');
           return;
         }
         continue;
@@ -186,25 +206,25 @@ export function GithubMessagePanel(props: Props): unknown {
     }
     const maxOrgs = status?.config?.maxOrgs ?? 10;
     if (orgsInUse && orgs.length > maxOrgs) {
-      setNotice(t('最多 {max} 个组织', { max: maxOrgs }));
+      showNotice(t('最多 {max} 个组织', { max: maxOrgs }), 'error');
       return;
     }
 
     const minutes = Number(intervalDraft);
     if (!Number.isFinite(minutes)) {
-      setNotice(t('检查周期必须是数字'));
+      showNotice(t('检查周期必须是数字'), 'error');
       return;
     }
     if (minutes < MIN_CLIENT_INTERVAL_MINUTES || minutes > MAX_CLIENT_INTERVAL_MINUTES) {
-      setNotice(t('检查周期需在 {min} 到 {max} 分钟之间', {
+      showNotice(t('检查周期需在 {min} 到 {max} 分钟之间', {
         min: MIN_CLIENT_INTERVAL_MINUTES,
         max: MAX_CLIENT_INTERVAL_MINUTES,
-      }));
+      }), 'error');
       return;
     }
 
     setBusy('config.set');
-    setNotice('');
+    setNotice(null);
     try {
       const next = await rpcCall<Status>('config.set', {
         intervalMs: Math.round(minutes * 60_000),
@@ -225,13 +245,13 @@ export function GithubMessagePanel(props: Props): unknown {
       setScopeDraft(next.config?.issueScope === 'owned' ? 'owned' : 'repos');
       setPrScopeDraft(next.config?.prScope === 'owned' ? 'owned' : 'review');
       setOrgsDraft((next.config?.orgs ?? []).join('\n'));
-      setNotice(t('已保存轮询配置'));
+      showNotice(t('已保存轮询配置'));
     } catch (failure) {
-      if (mounted.current) setNotice(t('操作失败：{error}', { error: errorText(failure) }));
+      if (mounted.current) showNotice(t('操作失败：{error}', { error: errorText(failure) }), 'error');
     } finally {
       if (mounted.current) setBusy('');
     }
-  }, [intervalDraft, reposDraft, scopeDraft, prScopeDraft, orgsDraft, rpcCall, status?.config?.maxRepos, status?.config?.maxOrgs, t]);
+  }, [intervalDraft, reposDraft, scopeDraft, prScopeDraft, orgsDraft, rpcCall, showNotice, status?.config?.maxRepos, status?.config?.maxOrgs, t]);
 
   if (loading && status === null) {
     return h('div', { className: 'icm-panel' }, h('p', { className: 'icm-muted' }, t('正在读取…')));
@@ -271,7 +291,19 @@ export function GithubMessagePanel(props: Props): unknown {
     error !== '' ? h('div', { className: 'icm-banner', role: 'alert', 'data-tone': 'danger' }, error) : null,
     contractMismatch ? h('div', { className: 'icm-banner', role: 'alert', 'data-tone': 'warning' },
       t('面板与后台版本不一致，请卸载后重新安装插件。')) : null,
-    notice !== '' ? h('div', { className: 'icm-banner', role: 'status' }, notice) : null,
+    notice !== null ? h('div', {
+      className: 'icm-banner icm-banner--notice',
+      role: 'status',
+      ...(notice.tone === 'error' ? { 'data-tone': 'danger' } : {}),
+    },
+      h('span', { className: 'icm-banner-text' }, notice.text),
+      h('button', {
+        type: 'button',
+        className: 'icm-banner-close',
+        'aria-label': t('关闭'),
+        title: t('关闭'),
+        onClick: () => setNotice(null),
+      }, '×')) : null,
 
     h('div', { className: 'icm-overview' },
       metric(t('三路上报'), formatNumber(stats?.emitted)),

@@ -14,6 +14,11 @@ export const STYLES = `
 .icm-banner{padding:10px 13px;border:1px solid var(--icm-border);border-radius:8px;background:var(--icm-soft);font-size:12px;line-height:1.6}
 .icm-banner[data-tone=danger]{border-color:color-mix(in srgb,var(--icm-danger) 35%,transparent);background:color-mix(in srgb,var(--icm-danger) 9%,transparent);color:var(--icm-danger)}
 .icm-banner[data-tone=warning]{border-color:color-mix(in srgb,var(--icm-warn) 35%,transparent);background:color-mix(in srgb,var(--icm-warn) 9%,transparent);color:var(--icm-warn)}
+.icm-banner--notice{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.icm-banner-text{flex:1;min-width:0;overflow-wrap:anywhere}
+.icm-banner-close{flex:none;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;padding:0;border:0;border-radius:5px;background:transparent;color:inherit;font:inherit;font-size:15px;line-height:1;cursor:pointer;opacity:.7}
+.icm-banner-close:hover{opacity:1;background:var(--icm-surface)}
+.icm-banner-close:focus-visible{outline:2px solid var(--icm-accent);outline-offset:1px;opacity:1}
 .icm-overview{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 .icm-metric{display:flex;flex-direction:column;gap:4px;padding:12px 14px;border:1px solid var(--icm-border);border-radius:10px;background:var(--icm-soft)}
 .icm-metric-label{color:var(--icm-muted);font-size:11px}
